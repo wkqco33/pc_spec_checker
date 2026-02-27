@@ -10,6 +10,8 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
+	"syscall"
 
 	"wkqcosoft.com/m/model"
 )
@@ -22,27 +24,54 @@ func New() *Collector {
 	return &Collector{}
 }
 
-// CollectAll은 모든 시스템 정보를 수집합니다
+// CollectAll은 모든 시스템 정보를 병렬로 수집합니다
 func (c *Collector) CollectAll() (*model.SystemInfo, error) {
-	cpu, err := c.CollectCPU()
-	if err != nil {
-		return nil, fmt.Errorf("CPU 정보 수집 실패: %w", err)
-	}
+	var (
+		cpu     *model.CPUInfo
+		memory  *model.MemoryInfo
+		storage []model.StorageInfo
+		gpu     []model.GPUInfo
+		errs    = make([]error, 4)
+		wg      sync.WaitGroup
+	)
 
-	memory, err := c.CollectMemory()
-	if err != nil {
-		return nil, fmt.Errorf("메모리 정보 수집 실패: %w", err)
-	}
+	wg.Add(4)
 
-	storage, err := c.CollectStorage()
-	if err != nil {
-		return nil, fmt.Errorf("저장장치 정보 수집 실패: %w", err)
-	}
+	// CPU 정보 수집
+	go func() {
+		defer wg.Done()
+		cpu, errs[0] = c.CollectCPU()
+	}()
 
-	gpu, err := c.CollectGPU()
-	if err != nil {
-		// GPU 정보는 선택적이므로 에러가 나도 계속 진행
-		gpu = []model.GPUInfo{}
+	// 메모리 정보 수집
+	go func() {
+		defer wg.Done()
+		memory, errs[1] = c.CollectMemory()
+	}()
+
+	// 저장장치 정보 수집
+	go func() {
+		defer wg.Done()
+		storage, errs[2] = c.CollectStorage()
+	}()
+
+	// GPU 정보 수집 (에러 시 빈 리스트로 처리)
+	go func() {
+		defer wg.Done()
+		var err error
+		gpu, err = c.CollectGPU()
+		if err != nil {
+			gpu = []model.GPUInfo{}
+		}
+	}()
+
+	wg.Wait()
+
+	// 주요 정보(CPU, Memory, Storage) 수집 실패 시 에러 반환
+	for i := 0; i < 3; i++ {
+		if errs[i] != nil {
+			return nil, errs[i]
+		}
 	}
 
 	return &model.SystemInfo{
@@ -64,13 +93,23 @@ func (c *Collector) CollectCPU() (*model.CPUInfo, error) {
 	cpuInfo := &model.CPUInfo{}
 	scanner := bufio.NewScanner(file)
 
-	physicalIDs := make(map[string]bool)
+	// 물리 코어를 식별하기 위해 "physical id"와 "core id"의 조합을 저장
+	// 예: "0:1" (0번 소켓의 1번 코어)
+	coreMap := make(map[string]bool)
 	threadCount := 0
+	var currentPhysicalID, currentCoreID string
 
 	for scanner.Scan() {
 		line := scanner.Text()
-		parts := strings.Split(line, ":")
+		if line == "" {
+			// 빈 줄은 프로세서 정보의 끝을 의미할 수 있으므로 저장된 ID 조합을 맵에 추가
+			if currentPhysicalID != "" && currentCoreID != "" {
+				coreMap[currentPhysicalID+":"+currentCoreID] = true
+			}
+			continue
+		}
 
+		parts := strings.Split(line, ":")
 		if len(parts) < 2 {
 			continue
 		}
@@ -84,47 +123,76 @@ func (c *Collector) CollectCPU() (*model.CPUInfo, error) {
 				cpuInfo.Model = value
 			}
 		case "physical id":
-			physicalIDs[value] = true
+			currentPhysicalID = value
+		case "core id":
+			currentCoreID = value
 		case "processor":
 			threadCount++
-		case "cpu MHz":
-			if freq, err := strconv.ParseFloat(value, 64); err == nil {
-				mhz := int(freq)
-				if mhz > cpuInfo.MaxFreqMHz {
-					cpuInfo.MaxFreqMHz = mhz
-				}
-			}
 		}
 	}
+	// 마지막 프로세서 정보 처리
+	if currentPhysicalID != "" && currentCoreID != "" {
+		coreMap[currentPhysicalID+":"+currentCoreID] = true
+	}
 
-	// 물리 코어 수 계산 (physical id의 개수)
-	cpuInfo.Cores = len(physicalIDs)
+	cpuInfo.Cores = len(coreMap)
+	// 만약 core id 정보가 없는 환경이라면 fallback으로 cpu cores 필드 탐색 시도
 	if cpuInfo.Cores == 0 {
-		cpuInfo.Cores = threadCount // fallback
+		cpuInfo.Cores = getCoresFallback()
 	}
+	// 여전히 0이라면 최소 1개로 설정
+	if cpuInfo.Cores == 0 {
+		cpuInfo.Cores = 1
+	}
+	
 	cpuInfo.Threads = threadCount
-
-	// 최대 주파수는 cpufreq에서도 확인
-	if cpuInfo.MaxFreqMHz == 0 {
-		cpuInfo.MaxFreqMHz = getMaxFreqFromSys()
-	}
+	cpuInfo.MaxFreqMHz = getMaxFreqFromSysAll()
 
 	return cpuInfo, nil
 }
 
-// getMaxFreqFromSys는 sysfs에서 최대 주파수를 읽어옵니다
-func getMaxFreqFromSys() int {
-	data, err := os.ReadFile("/sys/devices/system/cpu/cpu0/cpufreq/cpuinfo_max_freq")
+// getCoresFallback은 /proc/cpuinfo에서 "cpu cores" 필드를 직접 찾아 반환합니다.
+func getCoresFallback() int {
+	file, err := os.Open("/proc/cpuinfo")
 	if err != nil {
 		return 0
 	}
+	defer file.Close()
 
-	freq, err := strconv.Atoi(strings.TrimSpace(string(data)))
-	if err != nil {
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		line := scanner.Text()
+		if strings.Contains(line, "cpu cores") {
+			parts := strings.Split(line, ":")
+			if len(parts) >= 2 {
+				val, _ := strconv.Atoi(strings.TrimSpace(parts[1]))
+				return val // 이는 소켓당 코어 수이므로 소켓 수를 곱해야 정확하지만 일반적인 환경에선 유효함
+			}
+		}
+	}
+	return 0
+}
+
+// getMaxFreqFromSysAll은 모든 코어를 스캔하여 시스템 전체의 최대 주파수를 찾습니다
+func getMaxFreqFromSysAll() int {
+	maxFreq := 0
+	files, err := filepath.Glob("/sys/devices/system/cpu/cpu*/cpufreq/cpuinfo_max_freq")
+	if err != nil || len(files) == 0 {
 		return 0
 	}
 
-	return freq / 1000 // kHz를 MHz로 변환
+	for _, f := range files {
+		data, err := os.ReadFile(f)
+		if err != nil {
+			continue
+		}
+		freq, _ := strconv.Atoi(strings.TrimSpace(string(data)))
+		mhz := freq / 1000
+		if mhz > maxFreq {
+			maxFreq = mhz
+		}
+	}
+	return maxFreq
 }
 
 // CollectMemory는 메모리 정보를 수집합니다
@@ -135,98 +203,87 @@ func (c *Collector) CollectMemory() (*model.MemoryInfo, error) {
 	}
 	defer file.Close()
 
-	memInfo := &model.MemoryInfo{}
+	var total, available, free, buffers, cached uint64
 	scanner := bufio.NewScanner(file)
-
-	var memTotal, memAvailable, memFree, buffers, cached uint64
-
 	for scanner.Scan() {
-		line := scanner.Text()
-		parts := strings.Fields(line)
-
-		if len(parts) < 2 {
+		fields := strings.Fields(scanner.Text())
+		if len(fields) < 2 {
 			continue
 		}
-
-		key := strings.TrimSuffix(parts[0], ":")
-		value, err := strconv.ParseUint(parts[1], 10, 64)
-		if err != nil {
-			continue
-		}
+		key := strings.TrimSuffix(fields[0], ":")
+		val, _ := strconv.ParseUint(fields[1], 10, 64)
 
 		switch key {
 		case "MemTotal":
-			memTotal = value
+			total = val
 		case "MemAvailable":
-			memAvailable = value
+			available = val
 		case "MemFree":
-			memFree = value
+			free = val
 		case "Buffers":
-			buffers = value
+			buffers = val
 		case "Cached":
-			cached = value
+			cached = val
 		}
 	}
 
-	// KB를 GB로 변환
-	memInfo.TotalGB = float64(memTotal) / 1024 / 1024
-
-	// MemAvailable이 있으면 사용, 없으면 계산
-	if memAvailable > 0 {
-		memInfo.AvailableGB = float64(memAvailable) / 1024 / 1024
-	} else {
-		memInfo.AvailableGB = float64(memFree+buffers+cached) / 1024 / 1024
+	memInfo := &model.MemoryInfo{
+		TotalGB: float64(total) / 1024 / 1024,
 	}
-
+	if available > 0 {
+		memInfo.AvailableGB = float64(available) / 1024 / 1024
+	} else {
+		memInfo.AvailableGB = float64(free+buffers+cached) / 1024 / 1024
+	}
 	memInfo.UsedGB = memInfo.TotalGB - memInfo.AvailableGB
-	memInfo.UsedPercent = (memInfo.UsedGB / memInfo.TotalGB) * 100
+	if memInfo.TotalGB > 0 {
+		memInfo.UsedPercent = (memInfo.UsedGB / memInfo.TotalGB) * 100
+	}
 
 	return memInfo, nil
 }
 
-// CollectStorage는 저장장치 정보를 수집합니다
+// CollectStorage는 syscall을 사용하여 정확한 저장장치 정보를 수집합니다
 func (c *Collector) CollectStorage() ([]model.StorageInfo, error) {
-	// df 명령어를 사용하여 마운트된 파일시스템 정보를 가져옵니다
-	cmd := exec.Command("df", "-BG", "-T")
-	output, err := cmd.Output()
+	file, err := os.Open("/proc/mounts")
 	if err != nil {
 		return nil, err
 	}
+	defer file.Close()
 
 	var storages []model.StorageInfo
-	lines := strings.Split(string(output), "\n")
+	scanner := bufio.NewScanner(file)
+	seenMounts := make(map[string]bool)
 
-	// 첫 줄(헤더)은 건너뜁니다
-	for i := 1; i < len(lines); i++ {
-		fields := strings.Fields(lines[i])
-		if len(fields) < 7 {
+	for scanner.Scan() {
+		fields := strings.Fields(scanner.Text())
+		if len(fields) < 3 {
 			continue
 		}
 
 		device := fields[0]
-		fsType := fields[1]
-		mountPoint := fields[6]
+		mountPoint := fields[1]
+		fsType := fields[2]
 
-		// tmpfs, devtmpfs 등 가상 파일시스템은 제외
-		if strings.HasPrefix(device, "/dev/loop") ||
-			fsType == "tmpfs" ||
-			fsType == "devtmpfs" ||
-			fsType == "squashfs" {
+		// 물리 디스크가 아닌 장치 제외
+		if !strings.HasPrefix(device, "/dev/") || strings.HasPrefix(device, "/dev/loop") {
+			continue
+		}
+		if seenMounts[mountPoint] {
 			continue
 		}
 
-		// 용량 파싱 (G 제거)
-		totalStr := strings.TrimSuffix(fields[2], "G")
-		usedStr := strings.TrimSuffix(fields[3], "G")
-		availStr := strings.TrimSuffix(fields[4], "G")
+		var stat syscall.Statfs_t
+		if err := syscall.Statfs(mountPoint, &stat); err != nil {
+			continue
+		}
 
-		total, _ := strconv.ParseFloat(totalStr, 64)
-		used, _ := strconv.ParseFloat(usedStr, 64)
-		avail, _ := strconv.ParseFloat(availStr, 64)
+		total := float64(stat.Blocks) * float64(stat.Bsize) / 1024 / 1024 / 1024
+		free := float64(stat.Bavail) * float64(stat.Bsize) / 1024 / 1024 / 1024
+		used := total - free
 
-		usedPercent := 0.0
-		if total > 0 {
-			usedPercent = (used / total) * 100
+		if total == 0 {
+			continue
 		}
 
 		storages = append(storages, model.StorageInfo{
@@ -235,9 +292,10 @@ func (c *Collector) CollectStorage() ([]model.StorageInfo, error) {
 			Type:        fsType,
 			TotalGB:     total,
 			UsedGB:      used,
-			FreeGB:      avail,
-			UsedPercent: usedPercent,
+			FreeGB:      free,
+			UsedPercent: (used / total) * 100,
 		})
+		seenMounts[mountPoint] = true
 	}
 
 	return storages, nil
@@ -247,16 +305,26 @@ func (c *Collector) CollectStorage() ([]model.StorageInfo, error) {
 func (c *Collector) CollectGPU() ([]model.GPUInfo, error) {
 	var gpus []model.GPUInfo
 
-	// NVIDIA GPU 확인 (nvidia-smi 사용)
-	nvidiaGPUs, err := collectNvidiaGPU()
-	if err == nil {
+	// NVIDIA 우선 (가장 정확한 정보 제공)
+	if nvidiaGPUs, err := collectNvidiaGPU(); err == nil {
 		gpus = append(gpus, nvidiaGPUs...)
 	}
 
-	// AMD/Intel GPU는 lspci로 확인
-	otherGPUs, err := collectGPUFromLspci()
-	if err == nil {
-		gpus = append(gpus, otherGPUs...)
+	// 기타 GPU (lspci 기반)
+	if otherGPUs, err := collectGPUFromLspci(); err == nil {
+		for _, og := range otherGPUs {
+			// 중복 방지 (lspci에는 NVIDIA도 나오므로 이름으로 체크)
+			isDuplicate := false
+			for _, ng := range gpus {
+				if strings.Contains(og.Name, ng.Name) || strings.Contains(ng.Name, og.Name) {
+					isDuplicate = true
+					break
+				}
+			}
+			if !isDuplicate {
+				gpus = append(gpus, og)
+			}
+		}
 	}
 
 	if len(gpus) == 0 {
@@ -266,9 +334,8 @@ func (c *Collector) CollectGPU() ([]model.GPUInfo, error) {
 	return gpus, nil
 }
 
-// collectNvidiaGPU는 NVIDIA GPU 정보를 수집합니다
+// collectNvidiaGPU는 nvidia-smi를 사용하여 정확한 메모리 정보를 가져옵니다
 func collectNvidiaGPU() ([]model.GPUInfo, error) {
-	// nvidia-smi가 설치되어 있는지 확인
 	cmd := exec.Command("nvidia-smi", "--query-gpu=name,memory.total,driver_version", "--format=csv,noheader")
 	output, err := cmd.Output()
 	if err != nil {
@@ -277,43 +344,27 @@ func collectNvidiaGPU() ([]model.GPUInfo, error) {
 
 	var gpus []model.GPUInfo
 	lines := strings.Split(strings.TrimSpace(string(output)), "\n")
-
 	for _, line := range lines {
-		if line == "" {
-			continue
-		}
-
 		parts := strings.Split(line, ",")
 		if len(parts) < 3 {
 			continue
 		}
-
-		name := strings.TrimSpace(parts[0])
-		memStr := strings.TrimSpace(parts[1])
-		driver := strings.TrimSpace(parts[2])
-
-		// 메모리 파싱 (예: "8192 MiB")
-		memParts := strings.Fields(memStr)
-		memGB := 0.0
-		if len(memParts) > 0 {
-			memMiB, _ := strconv.ParseFloat(memParts[0], 64)
-			memGB = memMiB / 1024
-		}
+		memParts := strings.Fields(parts[1])
+		memMiB, _ := strconv.ParseFloat(memParts[0], 64)
 
 		gpus = append(gpus, model.GPUInfo{
-			Name:     name,
+			Name:     strings.TrimSpace(parts[0]),
 			Vendor:   "NVIDIA",
-			MemoryGB: memGB,
-			Driver:   driver,
+			MemoryGB: memMiB / 1024,
+			Driver:   strings.TrimSpace(parts[2]),
 		})
 	}
-
 	return gpus, nil
 }
 
-// collectGPUFromLspci는 lspci를 사용하여 GPU 정보를 수집합니다
+// collectGPUFromLspci는 lspci를 사용하여 범용 GPU 정보를 수집합니다
 func collectGPUFromLspci() ([]model.GPUInfo, error) {
-	cmd := exec.Command("lspci")
+	cmd := exec.Command("lspci", "-D") // 도메인 포함 PCI 주소 확보
 	output, err := cmd.Output()
 	if err != nil {
 		return nil, err
@@ -321,23 +372,21 @@ func collectGPUFromLspci() ([]model.GPUInfo, error) {
 
 	var gpus []model.GPUInfo
 	lines := strings.Split(string(output), "\n")
-
 	for _, line := range lines {
-		// VGA 또는 3D controller 찾기
 		if !strings.Contains(line, "VGA") && !strings.Contains(line, "3D controller") {
 			continue
 		}
 
-		// GPU 이름 추출
-		parts := strings.Split(line, ":")
-		if len(parts) < 3 {
+		parts := strings.SplitN(line, " ", 2)
+		if len(parts) < 2 {
 			continue
 		}
-
-		name := strings.TrimSpace(parts[2])
+		pciAddr := parts[0]
+		
+		// 상세 이름 추출
+		nameParts := strings.Split(parts[1], ": ")
+		name := nameParts[len(nameParts)-1]
 		vendor := "Unknown"
-
-		// 제조사 파악
 		lowerName := strings.ToLower(name)
 		if strings.Contains(lowerName, "nvidia") {
 			vendor = "NVIDIA"
@@ -347,50 +396,46 @@ func collectGPUFromLspci() ([]model.GPUInfo, error) {
 			vendor = "Intel"
 		}
 
-		// lspci로는 메모리 정보를 정확히 얻기 어려우므로 sysfs 확인
-		pciAddr := strings.TrimSpace(parts[0])
-		memGB := getGPUMemoryFromSys(pciAddr)
-
 		gpus = append(gpus, model.GPUInfo{
 			Name:     name,
 			Vendor:   vendor,
-			MemoryGB: memGB,
+			MemoryGB: getGPUMemoryFromSys(pciAddr),
 			Driver:   "N/A",
 		})
 	}
-
 	return gpus, nil
 }
 
-// getGPUMemoryFromSys는 sysfs에서 GPU 메모리를 읽어옵니다
+// getGPUMemoryFromSys는 sysfs에서 BAR 중 가장 큰 prefetchable 영역을 VRAM으로 추정하여 반환합니다
 func getGPUMemoryFromSys(pciAddr string) float64 {
-	// /sys/bus/pci/devices/0000:XX:XX.X/resource 파일에서 메모리 정보 확인
-	resourcePath := filepath.Join("/sys/bus/pci/devices", "0000:"+pciAddr, "resource")
-
-	data, err := os.ReadFile(resourcePath)
+	// PCI 도메인이 포함된 경로 확인
+	path := filepath.Join("/sys/bus/pci/devices", pciAddr, "resource")
+	data, err := os.ReadFile(path)
 	if err != nil {
 		return 0
 	}
 
-	// resource 파일의 각 라인은 메모리 영역을 나타냅니다
-	lines := strings.Split(string(data), "\n")
-	totalMem := uint64(0)
-
-	for _, line := range lines {
-		fields := strings.Fields(line)
-		if len(fields) < 2 {
+	var maxRegion uint64
+	scanner := bufio.NewScanner(strings.NewReader(string(data)))
+	for scanner.Scan() {
+		fields := strings.Fields(scanner.Text())
+		if len(fields) < 3 {
 			continue
 		}
+		start, _ := strconv.ParseUint(fields[0], 0, 64)
+		end, _ := strconv.ParseUint(fields[1], 0, 64)
+		flags, _ := strconv.ParseUint(fields[2], 0, 64)
 
-		// 시작 주소와 끝 주소 파싱
-		start, err1 := strconv.ParseUint(fields[0], 0, 64)
-		end, err2 := strconv.ParseUint(fields[1], 0, 64)
-
-		if err1 == nil && err2 == nil && end > start {
-			totalMem += (end - start)
+		// IORESOURCE_MEM (0x200) 및 IORESOURCE_PREFETCH (0x2000) 플래그 확인
+		// VRAM은 보통 prefetchable 메모리 영역 중 가장 큰 부분입니다.
+		if (flags & 0x200) != 0 && (flags & 0x2000) != 0 {
+			size := end - start + 1
+			if size > maxRegion {
+				maxRegion = size
+			}
 		}
 	}
 
-	// 바이트를 GB로 변환
-	return float64(totalMem) / 1024 / 1024 / 1024
+	return float64(maxRegion) / 1024 / 1024 / 1024
 }
+
