@@ -1,0 +1,68 @@
+name: Release for ppm
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            goos: linux
+            goarch: amd64
+            suffix: linux_amd64
+          - os: macos-latest
+            goos: darwin
+            goarch: amd64
+            suffix: darwin_amd64
+          - os: macos-latest
+            goos: darwin
+            goarch: arm64
+            suffix: darwin_arm64
+          - os: windows-latest
+            goos: windows
+            goarch: amd64
+            suffix: windows_amd64
+            ext: .exe
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Build Binary
+        shell: bash
+        run: |
+          REPO_NAME=$(basename ${{ github.repository }})
+          GOOS=${{ matrix.goos }} GOARCH=${{ matrix.goarch }} \
+            go build -ldflags="-s -w" -o "${REPO_NAME}_${{ matrix.suffix }}${{ matrix.ext }}" main.go
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.suffix }}
+          path: pc_spec_checker_${{ matrix.suffix }}${{ matrix.ext }}
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          generate_release_notes: true
+          files: artifacts/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -1,0 +1,5 @@
+{
+  "description": "Linux, macOS, Windows 시스템의 하드웨어 사양 정보를 수집하고 표시하는 크로스 플랫폼 CLI 도구",
+  "author": "wkqco33",
+  "homepage": "https://github.com/wkqco33/pc_spec_checker"
+}
