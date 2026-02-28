@@ -14,19 +14,23 @@ jobs:
             goos: linux
             goarch: amd64
             suffix: linux_amd64
+            archive: tar.gz
           - os: macos-latest
             goos: darwin
             goarch: amd64
             suffix: darwin_amd64
+            archive: tar.gz
           - os: macos-latest
             goos: darwin
             goarch: arm64
             suffix: darwin_arm64
+            archive: tar.gz
           - os: windows-latest
             goos: windows
             goarch: amd64
             suffix: windows_amd64
             ext: .exe
+            archive: zip
 
     runs-on: ${{ matrix.os }}
 
@@ -40,15 +44,31 @@ jobs:
       - name: Build Binary
         shell: bash
         run: |
-          REPO_NAME=$(basename ${{ github.repository }})
+          BINARY_NAME="pc_spec_checker"
+          VERSION=${{ github.ref_name }}
+          BUILD_TIME=$(date -u +'%Y-%m-%dT%H:%M:%SZ')
+          LDFLAGS="-s -w -X main.Version=${VERSION} -X main.BuildTime=${BUILD_TIME}"
+          
           GOOS=${{ matrix.goos }} GOARCH=${{ matrix.goarch }} \
-            go build -ldflags="-s -w" -o "${REPO_NAME}_${{ matrix.suffix }}${{ matrix.ext }}" main.go
+            go build -ldflags="${LDFLAGS}" -o "${BINARY_NAME}${{ matrix.ext }}" main.go
+
+      - name: Package
+        shell: bash
+        run: |
+          BINARY_NAME="pc_spec_checker"
+          PKG_NAME="${BINARY_NAME}_${{ matrix.suffix }}"
+          
+          if [ "${{ matrix.archive }}" == "tar.gz" ]; then
+            tar -czvf "${PKG_NAME}.tar.gz" "${BINARY_NAME}" ppm.json README.md
+          else
+            powershell -Command "Compress-Archive -Path '${BINARY_NAME}.exe', 'ppm.json', 'README.md' -DestinationPath '${PKG_NAME}.zip'"
+          fi
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.suffix }}
-          path: pc_spec_checker_${{ matrix.suffix }}${{ matrix.ext }}
+          path: pc_spec_checker_${{ matrix.suffix }}.${{ matrix.archive }}
 
   release:
     needs: build
