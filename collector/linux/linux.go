@@ -88,7 +88,7 @@ func (c *Collector) CollectCPU() (*model.CPUInfo, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 
 	cpuInfo := &model.CPUInfo{}
 	scanner := bufio.NewScanner(file)
@@ -184,7 +184,7 @@ func (c *Collector) CollectMemory() (*model.MemoryInfo, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 
 	var total, available, free, buffers, cached uint64
 	scanner := bufio.NewScanner(file)
@@ -232,7 +232,7 @@ func (c *Collector) CollectStorage() ([]model.StorageInfo, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 
 	var storages []model.StorageInfo
 	scanner := bufio.NewScanner(file)

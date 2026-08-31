@@ -33,18 +33,18 @@ func (f *ConsoleFormatter) Format(info *model.SystemInfo) string {
 
 	// CPU 정보
 	builder.WriteString("┌─ CPU 정보\n")
-	builder.WriteString(fmt.Sprintf("│  모델명: %s\n", info.CPU.Model))
-	builder.WriteString(fmt.Sprintf("│  물리 코어: %d개\n", info.CPU.Cores))
-	builder.WriteString(fmt.Sprintf("│  논리 코어(스레드): %d개\n", info.CPU.Threads))
-	builder.WriteString(fmt.Sprintf("│  최대 클럭: %d MHz\n", info.CPU.MaxFreqMHz))
+	fmt.Fprintf(&builder, "│  모델명: %s\n", info.CPU.Model)
+	fmt.Fprintf(&builder, "│  물리 코어: %d개\n", info.CPU.Cores)
+	fmt.Fprintf(&builder, "│  논리 코어(스레드): %d개\n", info.CPU.Threads)
+	fmt.Fprintf(&builder, "│  최대 클럭: %d MHz\n", info.CPU.MaxFreqMHz)
 	builder.WriteString("└─────────────────────────────────────────────────────────────────\n")
 	builder.WriteString("\n")
 
 	// 메모리 정보
 	builder.WriteString("┌─ 메모리 (RAM) 정보\n")
-	builder.WriteString(fmt.Sprintf("│  전체 용량: %.2f GB\n", info.Memory.TotalGB))
-	builder.WriteString(fmt.Sprintf("│  사용 중: %.2f GB (%.1f%%)\n", info.Memory.UsedGB, info.Memory.UsedPercent))
-	builder.WriteString(fmt.Sprintf("│  사용 가능: %.2f GB\n", info.Memory.AvailableGB))
+	fmt.Fprintf(&builder, "│  전체 용량: %.2f GB\n", info.Memory.TotalGB)
+	fmt.Fprintf(&builder, "│  사용 중: %.2f GB (%.1f%%)\n", info.Memory.UsedGB, info.Memory.UsedPercent)
+	fmt.Fprintf(&builder, "│  사용 가능: %.2f GB\n", info.Memory.AvailableGB)
 	builder.WriteString("└─────────────────────────────────────────────────────────────────\n")
 	builder.WriteString("\n")
 
@@ -54,12 +54,12 @@ func (f *ConsoleFormatter) Format(info *model.SystemInfo) string {
 		if i > 0 {
 			builder.WriteString("│  ────────────────────────────────────────────────────────────\n")
 		}
-		builder.WriteString(fmt.Sprintf("│  장치: %s\n", storage.Device))
-		builder.WriteString(fmt.Sprintf("│  마운트 지점: %s\n", storage.MountPoint))
-		builder.WriteString(fmt.Sprintf("│  파일시스템: %s\n", storage.Type))
-		builder.WriteString(fmt.Sprintf("│  전체 용량: %.2f GB\n", storage.TotalGB))
-		builder.WriteString(fmt.Sprintf("│  사용 중: %.2f GB (%.1f%%)\n", storage.UsedGB, storage.UsedPercent))
-		builder.WriteString(fmt.Sprintf("│  남은 용량: %.2f GB\n", storage.FreeGB))
+		fmt.Fprintf(&builder, "│  장치: %s\n", storage.Device)
+		fmt.Fprintf(&builder, "│  마운트 지점: %s\n", storage.MountPoint)
+		fmt.Fprintf(&builder, "│  파일시스템: %s\n", storage.Type)
+		fmt.Fprintf(&builder, "│  전체 용량: %.2f GB\n", storage.TotalGB)
+		fmt.Fprintf(&builder, "│  사용 중: %.2f GB (%.1f%%)\n", storage.UsedGB, storage.UsedPercent)
+		fmt.Fprintf(&builder, "│  남은 용량: %.2f GB\n", storage.FreeGB)
 	}
 	builder.WriteString("└─────────────────────────────────────────────────────────────────\n")
 	builder.WriteString("\n")
@@ -73,13 +73,13 @@ func (f *ConsoleFormatter) Format(info *model.SystemInfo) string {
 			if i > 0 {
 				builder.WriteString("│  ────────────────────────────────────────────────────────────\n")
 			}
-			builder.WriteString(fmt.Sprintf("│  이름: %s\n", gpu.Name))
-			builder.WriteString(fmt.Sprintf("│  제조사: %s\n", gpu.Vendor))
+			fmt.Fprintf(&builder, "│  이름: %s\n", gpu.Name)
+			fmt.Fprintf(&builder, "│  제조사: %s\n", gpu.Vendor)
 			if gpu.MemoryGB > 0 {
-				builder.WriteString(fmt.Sprintf("│  메모리: %.2f GB\n", gpu.MemoryGB))
+				fmt.Fprintf(&builder, "│  메모리: %.2f GB\n", gpu.MemoryGB)
 			}
 			if gpu.Driver != "" && gpu.Driver != "N/A" {
-				builder.WriteString(fmt.Sprintf("│  드라이버: %s\n", gpu.Driver))
+				fmt.Fprintf(&builder, "│  드라이버: %s\n", gpu.Driver)
 			}
 		}
 	}
