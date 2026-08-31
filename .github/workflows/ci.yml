@@ -15,9 +15,6 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
-        with:
-          # Windows에서 CRLF 변환으로 gofmt이 실패하지 않도록 LF 유지
-          autocrlf: false
 
       - uses: actions/setup-go@v5
         with:
