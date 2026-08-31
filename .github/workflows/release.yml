@@ -44,7 +44,7 @@ jobs:
       - name: Build Binary
         shell: bash
         run: |
-          BINARY_NAME="pc_spec_checker"
+          BINARY_NAME="pcsc"
           VERSION=${{ github.ref_name }}
           BUILD_TIME=$(date -u +'%Y-%m-%dT%H:%M:%SZ')
           LDFLAGS="-s -w -X main.Version=${VERSION} -X main.BuildTime=${BUILD_TIME}"
@@ -55,7 +55,7 @@ jobs:
       - name: Package
         shell: bash
         run: |
-          BINARY_NAME="pc_spec_checker"
+          BINARY_NAME="pcsc"
           PKG_NAME="${BINARY_NAME}_${{ matrix.suffix }}"
           
           if [ "${{ matrix.archive }}" == "tar.gz" ]; then
@@ -72,8 +72,8 @@ jobs:
         with:
           name: ${{ matrix.suffix }}
           path: |
-            pc_spec_checker_${{ matrix.suffix }}.${{ matrix.archive }}
-            pc_spec_checker_${{ matrix.suffix }}.${{ matrix.archive }}.sha256
+            pcsc_${{ matrix.suffix }}.${{ matrix.archive }}
+            pcsc_${{ matrix.suffix }}.${{ matrix.archive }}.sha256
 
   release:
     needs: build

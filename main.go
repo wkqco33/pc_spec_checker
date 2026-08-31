@@ -24,7 +24,7 @@ func main() {
 	longHelpFlag := flag.Bool("help", false, "도움말을 표시합니다")
 
 	flag.Usage = func() {
-		fmt.Fprintf(os.Stderr, "사용법: pc_spec_checker [옵션]\n\n")
+		fmt.Fprintf(os.Stderr, "사용법: pcsc [옵션]\n\n")
 		fmt.Fprintf(os.Stderr, "시스템 하드웨어 사양 정보를 수집하고 표시하는 CLI 도구입니다.\n\n")
 		fmt.Fprintf(os.Stderr, "옵션:\n")
 		flag.PrintDefaults()
@@ -33,7 +33,7 @@ func main() {
 	flag.Parse()
 
 	if *versionFlag || *longVersionFlag {
-		fmt.Printf("pc_spec_checker 버전: %s\n", Version)
+		fmt.Printf("pcsc 버전: %s\n", Version)
 		fmt.Printf("빌드 시간: %s\n", BuildTime)
 		fmt.Printf("Go 버전: %s\n", runtime.Version())
 		return

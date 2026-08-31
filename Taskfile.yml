@@ -1,0 +1,184 @@
+# PC Spec Checker - Taskfile
+# https://taskfile.dev
+
+version: '3'
+
+vars:
+  BINARY_NAME: pcsc
+  VERSION:
+    sh: git describe --tags --always --dirty 2>/dev/null || echo "dev"
+  BUILD_TIME:
+    sh: date +%FT%T%z
+  LDFLAGS: '-ldflags "-X main.Version={{.VERSION}} -X main.BuildTime={{.BUILD_TIME}}"'
+  # 기본 OS/ARCH 는 go env 를 그대로 따름
+  GOOS:
+    sh: go env GOOS
+  GOARCH:
+    sh: go env GOARCH
+  # 설치 경로
+  INSTALL_PATH: /usr/local/bin
+  # 색상 출력 (YAML 16진수 이스케이프: \x1b = ESC)
+  BLUE: "\x1b[0;34m"
+  GREEN: "\x1b[0;32m"
+  RED: "\x1b[0;31m"
+  NC: "\x1b[0m" # No Color
+
+tasks:
+  default:
+    desc: 사용 가능한 명령어 목록 표시
+    cmds:
+      - task: help
+
+  all:
+    desc: clean + test + build 전체 실행
+    cmds:
+      - task: clean
+      - task: test
+      - task: build
+
+  help:
+    desc: 사용 가능한 명령어 목록 표시
+    silent: true
+    cmds:
+      - |
+        echo "{{.BLUE}}PC Spec Checker - Task 명령어{{.NC}}"
+        echo ""
+        echo "{{.GREEN}}기본 명령어:{{.NC}}"
+        echo "  task build          - 현재 OS용 빌드"
+        echo "  task run            - 프로그램 빌드 및 실행"
+        echo "  task test           - 유닛 테스트 실행"
+        echo "  task clean          - 빌드 산출물 삭제"
+        echo "  task install        - 시스템에 설치 (sudo 필요)"
+        echo "  task uninstall      - 시스템에서 제거 (sudo 필요)"
+        echo ""
+        echo "{{.GREEN}}크로스 컴파일:{{.NC}}"
+        echo "  task build-linux    - Linux용 빌드"
+        echo "  task build-darwin   - macOS용 빌드"
+        echo "  task build-windows  - Windows용 빌드"
+        echo "  task build-all      - 모든 플랫폼용 빌드"
+        echo ""
+        echo "{{.GREEN}}개발:{{.NC}}"
+        echo "  task fmt            - 코드 포맷팅"
+        echo "  task lint           - 코드 린트"
+        echo "  task test-coverage  - 테스트 커버리지 확인"
+        echo ""
+
+  build:
+    desc: 현재 OS용 바이너리 빌드
+    cmds:
+      - echo "{{.BLUE}}Building {{.BINARY_NAME}} for {{.GOOS}}/{{.GOARCH}}...{{.NC}}"
+      - go build {{.LDFLAGS}} -o {{.BINARY_NAME}} .
+      - 'echo "{{.GREEN}}✓ Build complete: {{.BINARY_NAME}}{{.NC}}"'
+
+  run:
+    desc: 프로그램 빌드 및 실행
+    deps: [build]
+    cmds:
+      - echo "{{.BLUE}}Running {{.BINARY_NAME}}...{{.NC}}"
+      - ./{{.BINARY_NAME}}
+
+  test:
+    desc: 유닛 테스트 실행
+    cmds:
+      - echo "{{.BLUE}}Running tests...{{.NC}}"
+      - go test -v ./...
+      - echo "{{.GREEN}}✓ Tests passed{{.NC}}"
+
+  test-coverage:
+    desc: 테스트 커버리지 확인
+    cmds:
+      - echo "{{.BLUE}}Running tests with coverage...{{.NC}}"
+      - go test -v -coverprofile=coverage.out ./...
+      - go tool cover -html=coverage.out -o coverage.html
+      - 'echo "{{.GREEN}}✓ Coverage report generated: coverage.html{{.NC}}"'
+
+  clean:
+    desc: 빌드 산출물 및 임시 파일 삭제
+    cmds:
+      - echo "{{.BLUE}}Cleaning...{{.NC}}"
+      - rm -f {{.BINARY_NAME}} {{.BINARY_NAME}}_* *.exe coverage.out coverage.html
+      - echo "{{.GREEN}}✓ Clean complete{{.NC}}"
+
+  install:
+    desc: 시스템에 바이너리 설치 (sudo 필요)
+    deps: [build]
+    cmds:
+      - echo "{{.BLUE}}Installing {{.BINARY_NAME}} to {{.INSTALL_PATH}}...{{.NC}}"
+      - sudo install -m 755 {{.BINARY_NAME}} {{.INSTALL_PATH}}/{{.BINARY_NAME}}
+      - echo "{{.GREEN}}✓ Installed to {{.INSTALL_PATH}}/{{.BINARY_NAME}}{{.NC}}"
+      - echo "Run '{{.BINARY_NAME}}' from anywhere"
+
+  uninstall:
+    desc: 시스템에서 바이너리 제거 (sudo 필요)
+    cmds:
+      - echo "{{.BLUE}}Uninstalling {{.BINARY_NAME}}...{{.NC}}"
+      - sudo rm -f {{.INSTALL_PATH}}/{{.BINARY_NAME}}
+      - echo "{{.GREEN}}✓ Uninstalled{{.NC}}"
+
+  fmt:
+    desc: Go 코드 포맷팅
+    cmds:
+      - echo "{{.BLUE}}Formatting code...{{.NC}}"
+      - go fmt ./...
+      - echo "{{.GREEN}}✓ Code formatted{{.NC}}"
+
+  lint:
+    desc: 코드 린트 (golangci-lint 필요)
+    cmds:
+      - |
+        if command -v golangci-lint >/dev/null 2>&1; then
+          golangci-lint run ./...
+          echo "{{.GREEN}}✓ Linting complete{{.NC}}"
+        else
+          echo "{{.RED}}golangci-lint not installed. Install: go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest{{.NC}}"
+        fi
+
+  build-linux:
+    desc: Linux용 바이너리 빌드
+    cmds:
+      - echo "{{.BLUE}}Building for Linux (amd64)...{{.NC}}"
+      - env GOOS=linux GOARCH=amd64 go build {{.LDFLAGS}} -o {{.BINARY_NAME}}_linux_amd64 .
+      - 'echo "{{.GREEN}}✓ Built: {{.BINARY_NAME}}_linux_amd64{{.NC}}"'
+
+  build-darwin:
+    desc: macOS용 바이너리 빌드
+    cmds:
+      - echo "{{.BLUE}}Building for macOS...{{.NC}}"
+      - echo "  - Intel (amd64)"
+      - env GOOS=darwin GOARCH=amd64 go build {{.LDFLAGS}} -o {{.BINARY_NAME}}_darwin_amd64 .
+      - echo "  - Apple Silicon (arm64)"
+      - env GOOS=darwin GOARCH=arm64 go build {{.LDFLAGS}} -o {{.BINARY_NAME}}_darwin_arm64 .
+      - 'echo "{{.GREEN}}✓ Built: {{.BINARY_NAME}}_darwin_amd64, {{.BINARY_NAME}}_darwin_arm64{{.NC}}"'
+
+  build-windows:
+    desc: Windows용 바이너리 빌드
+    cmds:
+      - echo "{{.BLUE}}Building for Windows (amd64)...{{.NC}}"
+      - env GOOS=windows GOARCH=amd64 go build {{.LDFLAGS}} -o {{.BINARY_NAME}}_windows_amd64.exe .
+      - 'echo "{{.GREEN}}✓ Built: {{.BINARY_NAME}}_windows_amd64.exe{{.NC}}"'
+
+  build-all:
+    desc: 모든 플랫폼용 바이너리 빌드
+    cmds:
+      - task: build-linux
+      - task: build-darwin
+      - task: build-windows
+      - echo ""
+      - echo "{{.GREEN}}✓ All builds complete:{{.NC}}"
+      - ls -lh {{.BINARY_NAME}}_* 2>/dev/null || true
+
+  deps:
+    desc: 의존성 다운로드 및 정리
+    cmds:
+      - echo "{{.BLUE}}Downloading dependencies...{{.NC}}"
+      - go mod download
+      - go mod tidy
+      - echo "{{.GREEN}}✓ Dependencies updated{{.NC}}"
+
+  verify:
+    desc: 모든 검증 단계 실행 (fmt, test, build)
+    cmds:
+      - task: fmt
+      - task: test
+      - task: build
+      - echo "{{.GREEN}}✓ All verifications passed{{.NC}}"

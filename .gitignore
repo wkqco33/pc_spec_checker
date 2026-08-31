@@ -6,8 +6,8 @@
 # https://github.com/github/gitignore/blob/main/community/Golang/Go.AllowList.gitignore
 #
 # Build artifacts
-/pc_spec_checker
-/pc_spec_checker_*
+/pcsc
+/pcsc_*
 
 # Binaries for programs and plugins
 *.exe

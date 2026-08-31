@@ -28,9 +28,9 @@ formatter/           # 수집 데이터를 콘솔 텍스트로 포맷팅
 - 테스트는 빌드 태그(`//go:build`)를 활용해 OS 독립적인 로직은 어느 플랫폼에서든 실행 가능하게 유지합니다.
 
 ```bash
-make test            # 모든 유닛 테스트
+task test            # 모든 유닛 테스트
 go test ./...        # go test 직접 실행
-make verify          # fmt + test + build 전체 검증
+task verify          # fmt + test + build 전체 검증
 ```
 
 ### OS별 구현체 테스트 원칙

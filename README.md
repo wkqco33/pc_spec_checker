@@ -24,7 +24,7 @@
 프로젝트는 레이어드 아키텍처와 OS별 서브패키지로 구성되어 있습니다:
 
 ```text
-pc_spec_checker/
+pcsc/
 ├── model/                  # 데이터 모델 정의
 │   ├── system_info.go      # 시스템 정보 구조체
 │   └── system_info_test.go # 모델 JSON 테스트
@@ -46,7 +46,7 @@ pc_spec_checker/
 │   ├── formatter.go        # 콘솔 출력 포매터
 │   └── formatter_test.go   # 포매터 유닛 테스트
 ├── main.go                 # 애플리케이션 진입점
-├── Makefile                # 빌드 자동화
+├── Taskfile.yml            # 빌드 자동화
 ├── go.mod                  # Go 모듈 정의
 ├── ppm.json                # ppm 패키지 매니페스트
 ├── AGENTS.md               # AI 에이전트 개발 가이드
@@ -67,33 +67,35 @@ pc_spec_checker/
   - **서브패키지**: 각 OS별 구현을 독립적인 패키지로 분리하여 관리
 - **formatter**: 수집된 데이터를 사용자가 보기 좋은 형태로 포맷팅합니다
 - **main**: 전체 애플리케이션의 흐름을 조정하고 OS를 자동 감지합니다
-- **Makefile**: 빌드, 테스트, 설치 등을 자동화하는 Make 스크립트
+- **Taskfile**: 빌드, 테스트, 설치 등을 자동화하는 스크립트 ([Task](https://taskfile.dev))
 
 ## 빌드 방법
 
-### Makefile 사용 (권장)
+### Taskfile 사용 (권장)
+
+[Task](https://taskfile.dev) 설치 후 (`go install github.com/go-task/task/v3/cmd/task@latest`):
 
 ```bash
 # 도움말 보기
-make help
+task help
 
 # 현재 OS용 빌드
-make build
+task build
 
 # 빌드 및 실행
-make run
+task run
 
 # 테스트 실행
-make test
+task test
 
 # 모든 플랫폼용 빌드
-make build-all
+task build-all
 
 # 시스템에 설치 (Linux/macOS, sudo 필요)
-make install
+task install
 
 # 정리
-make clean
+task clean
 ```
 
 ### 수동 빌드
@@ -105,23 +107,23 @@ make clean
 go mod tidy
 
 # 실행 파일 빌드
-go build -o pc_spec_checker
+go build -o pcsc
 ```
 
 #### 크로스 컴파일 (다른 OS용 빌드)
 
 ```bash
 # Linux용
-GOOS=linux GOARCH=amd64 go build -o pc_spec_checker_linux
+GOOS=linux GOARCH=amd64 go build -o pcsc_linux
 
 # macOS용 (Intel)
-GOOS=darwin GOARCH=amd64 go build -o pc_spec_checker_macos_amd64
+GOOS=darwin GOARCH=amd64 go build -o pcsc_macos_amd64
 
 # macOS용 (Apple Silicon)
-GOOS=darwin GOARCH=arm64 go build -o pc_spec_checker_macos_arm64
+GOOS=darwin GOARCH=arm64 go build -o pcsc_macos_arm64
 
 # Windows용
-GOOS=windows GOARCH=amd64 go build -o pc_spec_checker.exe
+GOOS=windows GOARCH=amd64 go build -o pcsc.exe
 ```
 
 ## 실행 방법
@@ -130,26 +132,27 @@ GOOS=windows GOARCH=amd64 go build -o pc_spec_checker.exe
 
 ```bash
 # Linux/macOS
-./pc_spec_checker
+./pcsc
 
 # Windows
-pc_spec_checker.exe
+pcsc.exe
 ```
 
 프로그램은 자동으로 현재 운영체제를 감지하고 적절한 방법으로 시스템 정보를 수집합니다.
 
-## Makefile 주요 타겟
+## Task 주요 태스크
 
 ```text
-make help        # 사용 가능한 모든 명령어 표시
-make build       # 현재 OS용 빌드
-make run         # 빌드 및 실행
-make test          # 유닛 테스트 실행
-make test-coverage # 테스트 커버리지 리포트
-make verify        # fmt + test + build 전체 검증make build-all   # 모든 플랫폼용 크로스 컴파일
-make install     # 시스템에 설치 (/usr/local/bin)
-make uninstall   # 설치된 바이너리 제거
-make clean       # 빌드 아티팩트 정리
+task help          # 사용 가능한 모든 명령어 표시 (기본 실행)
+task build         # 현재 OS용 빌드
+task run           # 빌드 및 실행
+task test          # 유닛 테스트 실행
+task test-coverage # 테스트 커버리지 리포트
+task verify        # fmt + test + build 전체 검증
+task build-all     # 모든 플랫폼용 크로스 컴파일
+task install       # 시스템에 설치 (/usr/local/bin)
+task uninstall     # 설치된 바이너리 제거
+task clean         # 빌드 아티팩트 정리
 ```
 
 ## 테스트 실행
