@@ -64,11 +64,16 @@ jobs:
             powershell -Command "Compress-Archive -Path '${BINARY_NAME}.exe', 'ppm.json', 'README.md' -DestinationPath '${PKG_NAME}.zip'"
           fi
 
+          # 무결성 검증용 SHA-256 체크섬 생성
+          shasum -a 256 "${PKG_NAME}.${{ matrix.archive }}" > "${PKG_NAME}.${{ matrix.archive }}.sha256"
+
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.suffix }}
-          path: pc_spec_checker_${{ matrix.suffix }}.${{ matrix.archive }}
+          path: |
+            pc_spec_checker_${{ matrix.suffix }}.${{ matrix.archive }}
+            pc_spec_checker_${{ matrix.suffix }}.${{ matrix.archive }}.sha256
 
   release:
     needs: build
