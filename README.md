@@ -26,18 +26,21 @@
 ```text
 pc_spec_checker/
 ├── model/                  # 데이터 모델 정의
-│   └── system_info.go      # 시스템 정보 구조체
+│   ├── system_info.go      # 시스템 정보 구조체
+│   └── system_info_test.go # 모델 JSON 테스트
 ├── collector/              # 시스템 정보 수집 레이어
 │   ├── factory.go          # OS별 collector 팩토리
-│   ├── collector_test.go   # 통합 테스트
+│   ├── collector_test.go   # Linux 통합 테스트
 │   ├── linux/              # Linux 전용 패키지
 │   │   ├── linux.go        # Linux collector 구현
 │   │   └── stub.go         # 다른 OS용 스텁
 │   ├── darwin/             # macOS 전용 패키지
 │   │   ├── darwin.go       # macOS collector 구현
+│   │   ├── vmstat_parse.go # vm_stat 파싱 (OS 무관)
 │   │   └── stub.go         # 다른 OS용 스텁
 │   └── windows/            # Windows 전용 패키지
 │       ├── windows.go      # Windows collector 구현
+│       ├── vendor_detect.go# GPU 제조사 판별 (OS 무관)
 │       └── stub.go         # 다른 OS용 스텁
 ├── formatter/              # 출력 포맷팅 레이어
 │   ├── formatter.go        # 콘솔 출력 포매터
@@ -45,6 +48,11 @@ pc_spec_checker/
 ├── main.go                 # 애플리케이션 진입점
 ├── Makefile                # 빌드 자동화
 ├── go.mod                  # Go 모듈 정의
+├── ppm.json                # ppm 패키지 매니페스트
+├── AGENTS.md               # AI 에이전트 개발 가이드
+├── LICENSE                 # MIT 라이선스
+├── CONTRIBUTING.md         # 기여 가이드
+├── SECURITY.md             # 보안 정책
 └── README.md               # 프로젝트 문서
 ```
 
@@ -52,7 +60,7 @@ pc_spec_checker/
 
 - **model**: 시스템 정보를 담는 데이터 구조를 정의합니다
 - **collector**: 실제 시스템에서 정보를 수집하는 로직을 담당합니다
-  - **linux/**: `/proc/cpuinfo`, `/proc/meminfo`, `df`, `lspci`, `nvidia-smi` 사용
+  - **linux/**: `/proc/cpuinfo`, `/proc/meminfo`, `syscall.Statfs`, `lspci`, `nvidia-smi` 사용
   - **darwin/**: `sysctl`, `vm_stat`, `df`, `system_profiler` 사용
   - **windows/**: `wmic` 명령어와 WMI 사용
   - **조건부 컴파일**: Go의 빌드 태그(`//go:build`)를 사용하여 OS별로 적절한 코드만 컴파일
@@ -93,9 +101,6 @@ make clean
 #### 현재 OS용 빌드
 
 ```bash
-# 프로젝트 디렉토리로 이동
-cd /home/wkqco/Project/utils/pc_spec_checker
-
 # 의존성 다운로드 및 정리
 go mod tidy
 
@@ -139,9 +144,9 @@ pc_spec_checker.exe
 make help        # 사용 가능한 모든 명령어 표시
 make build       # 현재 OS용 빌드
 make run         # 빌드 및 실행
-make test        # 유닛 테스트 실행
-make coverage    # 테스트 커버리지 리포트
-make build-all   # 모든 플랫폼용 크로스 컴파일
+make test          # 유닛 테스트 실행
+make test-coverage # 테스트 커버리지 리포트
+make verify        # fmt + test + build 전체 검증make build-all   # 모든 플랫폼용 크로스 컴파일
 make install     # 시스템에 설치 (/usr/local/bin)
 make uninstall   # 설치된 바이너리 제거
 make clean       # 빌드 아티팩트 정리
@@ -199,7 +204,7 @@ go test ./formatter
 
 **Linux:**
 
-- 기본 시스템 유틸리티: `df`, `lspci`
+- 기본 시스템 유틸리티: `lspci`
 - (선택사항) NVIDIA GPU가 있는 경우: `nvidia-smi`
 
 **macOS:**
@@ -271,8 +276,8 @@ type SystemCollector interface {
 
 ## 라이선스
 
-이 프로젝트는 개인 사용을 위한 유틸리티 도구입니다.
+이 프로젝트는 [MIT 라이선스](LICENSE)로 배포됩니다.
 
 ## 기여
 
-버그 리포트나 기능 제안은 언제든지 환영합니다!
+버그 리포트나 기능 제안은 GitHub Issues를 이용해 주세요. 기여 절차와 규칙은 [CONTRIBUTING.md](CONTRIBUTING.md)를 참고하세요. 보안 취약점은 [SECURITY.md](SECURITY.md)에 따라 비공개로 보고해 주세요.
