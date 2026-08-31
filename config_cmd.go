@@ -83,14 +83,14 @@ func runConfigInit(w io.Writer) error {
 	path := config.DefaultPath()
 
 	if _, err := os.Stat(path); err == nil {
-		fmt.Fprintln(w, "설정 파일이 이미 존재합니다: "+path)
+		_, _ = fmt.Fprintln(w, "설정 파일이 이미 존재합니다: "+path)
 		return nil
 	}
 
 	if err := config.Save(config.Default()); err != nil {
 		return err
 	}
-	fmt.Fprintln(w, "설정 파일이 생성되었습니다: "+path)
+	_, _ = fmt.Fprintln(w, "설정 파일이 생성되었습니다: "+path)
 	return nil
 }
 
@@ -100,7 +100,7 @@ func runConfigShow(w io.Writer) error {
 	if err != nil {
 		return err
 	}
-	fmt.Fprint(w, formatConfig(c))
+	_, _ = fmt.Fprint(w, formatConfig(c))
 	return nil
 }
 
@@ -127,7 +127,7 @@ func runConfigSet(w io.Writer, key, value string) error {
 	if err := config.Save(c); err != nil {
 		return err
 	}
-	fmt.Fprintf(w, "설정이 저장되었습니다: %s = %s\n", key, value)
+	_, _ = fmt.Fprintf(w, "설정이 저장되었습니다: %s = %s\n", key, value)
 	return nil
 }
 

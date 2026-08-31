@@ -57,7 +57,9 @@ func TestConfigInit_ExistingFile_NoOverwrite(t *testing.T) {
 	// 파일 수정 후 다시 init
 	cfg, _ := config.Load()
 	cfg.AI.Model = "custom-model"
-	config.Save(cfg)
+	if err := config.Save(cfg); err != nil {
+		t.Fatalf("설정 저장 실패: %v", err)
+	}
 
 	out, err := runConfigCommand(t, "init")
 	if err != nil {

@@ -70,111 +70,114 @@ func (c *Collector) CollectAll() (*model.SystemInfo, error) {
 	}, nil
 }
 
-// CollectCPU는 CPU 정보를 수집합니다
+// CollectCPU는 CPU 정보를 수집합니다 (wmic → PowerShell CIM 폴백)
 func (c *Collector) CollectCPU() (*model.CPUInfo, error) {
-	cpuInfo := &model.CPUInfo{}
+	raw := &cpuRaw{}
 
 	// CPU 이름
-	cmd := exec.Command("wmic", "cpu", "get", "Name", "/value")
-	if output, err := cmd.Output(); err == nil {
-		lines := strings.Split(string(output), "\n")
-		for _, line := range lines {
-			if strings.HasPrefix(line, "Name=") {
-				cpuInfo.Model = strings.TrimSpace(strings.TrimPrefix(line, "Name="))
-				break
-			}
-		}
+	if v := c.wmicValue("cpu get Name /value", "Name"); v != "" {
+		raw.Model = v
+	}
+	if raw.Model == "" {
+		raw.Model = c.psValue("Win32_Processor", "Name")
 	}
 
 	// 물리 코어 수
-	cmd = exec.Command("wmic", "cpu", "get", "NumberOfCores", "/value")
-	if output, err := cmd.Output(); err == nil {
-		lines := strings.Split(string(output), "\n")
-		for _, line := range lines {
-			if strings.HasPrefix(line, "NumberOfCores=") {
-				coresStr := strings.TrimSpace(strings.TrimPrefix(line, "NumberOfCores="))
-				if cores, err := strconv.Atoi(coresStr); err == nil {
-					cpuInfo.Cores = cores
-				}
-				break
-			}
-		}
+	if v := c.wmicValue("cpu get NumberOfCores /value", "NumberOfCores"); v != "" {
+		raw.Cores = parseInt(v)
+	}
+	if raw.Cores == 0 {
+		raw.Cores = parseInt(c.psValue("Win32_Processor", "NumberOfCores"))
 	}
 
 	// 논리 프로세서 수 (스레드)
-	cmd = exec.Command("wmic", "cpu", "get", "NumberOfLogicalProcessors", "/value")
-	if output, err := cmd.Output(); err == nil {
-		lines := strings.Split(string(output), "\n")
-		for _, line := range lines {
-			if strings.HasPrefix(line, "NumberOfLogicalProcessors=") {
-				threadsStr := strings.TrimSpace(strings.TrimPrefix(line, "NumberOfLogicalProcessors="))
-				if threads, err := strconv.Atoi(threadsStr); err == nil {
-					cpuInfo.Threads = threads
-				}
-				break
-			}
-		}
+	if v := c.wmicValue("cpu get NumberOfLogicalProcessors /value", "NumberOfLogicalProcessors"); v != "" {
+		raw.Threads = parseInt(v)
+	}
+	if raw.Threads == 0 {
+		raw.Threads = parseInt(c.psValue("Win32_Processor", "NumberOfLogicalProcessors"))
 	}
 
 	// CPU 최대 클럭 속도 (MHz)
-	cmd = exec.Command("wmic", "cpu", "get", "MaxClockSpeed", "/value")
-	if output, err := cmd.Output(); err == nil {
-		lines := strings.Split(string(output), "\n")
-		for _, line := range lines {
-			if strings.HasPrefix(line, "MaxClockSpeed=") {
-				freqStr := strings.TrimSpace(strings.TrimPrefix(line, "MaxClockSpeed="))
-				if freq, err := strconv.Atoi(freqStr); err == nil {
-					cpuInfo.MaxFreqMHz = freq
-				}
-				break
-			}
-		}
+	if v := c.wmicValue("cpu get MaxClockSpeed /value", "MaxClockSpeed"); v != "" {
+		raw.MaxFreq = parseInt(v)
+	}
+	if raw.MaxFreq == 0 {
+		raw.MaxFreq = parseInt(c.psValue("Win32_Processor", "MaxClockSpeed"))
 	}
 
-	if cpuInfo.Model == "" {
+	if !raw.valid() {
 		return nil, fmt.Errorf("CPU 정보를 가져올 수 없습니다")
 	}
 
-	return cpuInfo, nil
+	return &model.CPUInfo{
+		Model:      raw.Model,
+		Cores:      raw.Cores,
+		Threads:    raw.Threads,
+		MaxFreqMHz: raw.MaxFreq,
+	}, nil
 }
 
-// CollectMemory는 메모리 정보를 수집합니다
+// wmicValue는 wmic 명령 출력에서 키 값을 추출합니다
+func (c *Collector) wmicValue(args, key string) string {
+	cmd := exec.Command("wmic", strings.Fields(args)...)
+	output, err := cmd.Output()
+	if err != nil {
+		return ""
+	}
+	return parseValueLine(string(output), key)
+}
+
+// psValue는 PowerShell CIM으로 값을 조회합니다 (wmic이 없는 최신 Windows 대응)
+func (c *Collector) psValue(class, property string) string {
+	script := "(Get-CimInstance -ClassName " + class + " | Select-Object -First 1)." + property
+	cmd := exec.Command("powershell", "-NoProfile", "-NonInteractive", "-Command", script)
+	output, err := cmd.Output()
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(output))
+}
+
+// CollectMemory는 메모리 정보를 수집합니다 (wmic → PowerShell CIM 폴백)
 func (c *Collector) CollectMemory() (*model.MemoryInfo, error) {
 	memInfo := &model.MemoryInfo{}
 
 	// 전체 물리 메모리
-	cmd := exec.Command("wmic", "ComputerSystem", "get", "TotalPhysicalMemory", "/value")
-	output, err := cmd.Output()
+	output, err := exec.Command("wmic", "ComputerSystem", "get", "TotalPhysicalMemory", "/value").Output()
+	if err != nil {
+		output, err = c.psOutput("(Get-CimInstance Win32_ComputerSystem).TotalPhysicalMemory")
+	}
 	if err != nil {
 		return nil, err
 	}
 
-	lines := strings.Split(string(output), "\n")
-	for _, line := range lines {
-		if strings.HasPrefix(line, "TotalPhysicalMemory=") {
-			memStr := strings.TrimSpace(strings.TrimPrefix(line, "TotalPhysicalMemory="))
-			if totalBytes, err := strconv.ParseUint(memStr, 10, 64); err == nil {
-				memInfo.TotalGB = float64(totalBytes) / 1024 / 1024 / 1024
-			}
-			break
+	if v := parseValueLine(string(output), "TotalPhysicalMemory"); v != "" {
+		if totalBytes, err := strconv.ParseUint(v, 10, 64); err == nil {
+			memInfo.TotalGB = float64(totalBytes) / 1024 / 1024 / 1024
+		}
+	} else if v := strings.TrimSpace(string(output)); v != "" {
+		if totalBytes, err := strconv.ParseUint(v, 10, 64); err == nil {
+			memInfo.TotalGB = float64(totalBytes) / 1024 / 1024 / 1024
 		}
 	}
 
 	// 사용 가능한 메모리
-	cmd = exec.Command("wmic", "OS", "get", "FreePhysicalMemory", "/value")
-	output, err = cmd.Output()
+	output, err = exec.Command("wmic", "OS", "get", "FreePhysicalMemory", "/value").Output()
+	if err != nil {
+		output, err = c.psOutput("[math]::Round((Get-CimInstance Win32_OperatingSystem).FreePhysicalMemory)")
+	}
 	if err != nil {
 		return nil, err
 	}
 
-	lines = strings.Split(string(output), "\n")
-	for _, line := range lines {
-		if strings.HasPrefix(line, "FreePhysicalMemory=") {
-			memStr := strings.TrimSpace(strings.TrimPrefix(line, "FreePhysicalMemory="))
-			if freeKB, err := strconv.ParseUint(memStr, 10, 64); err == nil {
-				memInfo.AvailableGB = float64(freeKB) / 1024 / 1024
-			}
-			break
+	if v := parseValueLine(string(output), "FreePhysicalMemory"); v != "" {
+		if freeKB, err := strconv.ParseUint(v, 10, 64); err == nil {
+			memInfo.AvailableGB = float64(freeKB) / 1024 / 1024
+		}
+	} else if v := strings.TrimSpace(string(output)); v != "" {
+		if freeKB, err := strconv.ParseUint(v, 10, 64); err == nil {
+			memInfo.AvailableGB = float64(freeKB) / 1024 / 1024
 		}
 	}
 
@@ -186,13 +189,25 @@ func (c *Collector) CollectMemory() (*model.MemoryInfo, error) {
 	return memInfo, nil
 }
 
-// CollectStorage는 저장장치 정보를 수집합니다
+// psOutput은 PowerShell 명령을 실행해 출력을 반환합니다
+func (c *Collector) psOutput(script string) ([]byte, error) {
+	cmd := exec.Command("powershell", "-NoProfile", "-NonInteractive", "-Command", script)
+	return cmd.Output()
+}
+
+// CollectStorage는 저장장치 정보를 수집합니다 (wmic → PowerShell CIM 폴백)
 func (c *Collector) CollectStorage() ([]model.StorageInfo, error) {
 	// 논리 디스크 정보 가져오기
-	cmd := exec.Command("wmic", "logicaldisk", "get", "DeviceID,FileSystem,Size,FreeSpace", "/format:csv")
-	output, err := cmd.Output()
+	output, err := exec.Command("wmic", "logicaldisk", "get", "DeviceID,FileSystem,Size,FreeSpace", "/format:csv").Output()
 	if err != nil {
-		return nil, err
+		script := "Get-CimInstance Win32_LogicalDisk | Where-Object {$_.Size} | " +
+			"ForEach-Object { \"$($_.DeviceID),$($_.FileSystem),$($_.Size),$($_.FreeSpace)\" }"
+		output, err = c.psOutput(script)
+		if err != nil {
+			return nil, err
+		}
+		// PowerShell 출력은 헤더 없는 CSV — 파서가 헤더를 건너뛰므로 더미 헤더 추가
+		output = append([]byte("DeviceID,FileSystem,Size,FreeSpace\n"), output...)
 	}
 
 	var storages []model.StorageInfo
@@ -261,10 +276,15 @@ func (c *Collector) CollectGPU() ([]model.GPUInfo, error) {
 	}
 
 	// wmic로 GPU 정보 가져오기
-	cmd := exec.Command("wmic", "path", "win32_VideoController", "get", "Name,AdapterRAM,DriverVersion", "/format:csv")
-	output, err := cmd.Output()
+	output, err := exec.Command("wmic", "path", "win32_VideoController", "get", "Name,AdapterRAM,DriverVersion", "/format:csv").Output()
 	if err != nil {
-		return nil, err
+		script := "Get-CimInstance Win32_VideoController | " +
+			"ForEach-Object { \"$($_.AdapterRAM),$($_.DriverVersion),$($_.Name)\" }"
+		output, err = c.psOutput(script)
+		if err != nil {
+			return nil, err
+		}
+		output = append([]byte("Node,AdapterRAM,DriverVersion,Name\n"), output...)
 	}
 
 	var gpus []model.GPUInfo

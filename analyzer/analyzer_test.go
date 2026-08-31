@@ -118,7 +118,7 @@ func TestLLMAnalyzer_Analyze_InvalidJSON(t *testing.T) {
 func TestLLMAnalyzer_Analyze_ValidationError(t *testing.T) {
 	data, _ := json.Marshal(validResult())
 	var m map[string]any
-	json.Unmarshal(data, &m)
+	_ = json.Unmarshal(data, &m)
 	verdicts := m["verdicts"].([]any)
 	verdicts[0].(map[string]any)["category"] = "invalid-category"
 	corrupted, _ := json.Marshal(m)

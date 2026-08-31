@@ -95,8 +95,12 @@ func TestSave_CreatesDir(t *testing.T) {
 func TestSaveLoad_InvalidJSON(t *testing.T) {
 	home := tempHome(t)
 	path := filepath.Join(home, ".config", "pcsc")
-	os.MkdirAll(path, 0o755)
-	os.WriteFile(filepath.Join(path, "config.json"), []byte("{invalid"), 0o644)
+	if err := os.MkdirAll(path, 0o755); err != nil {
+		t.Fatalf("디렉터리 생성 실패: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(path, "config.json"), []byte("{invalid"), 0o644); err != nil {
+		t.Fatalf("파일 작성 실패: %v", err)
+	}
 
 	if _, err := Load(); err == nil {
 		t.Error("잘못된 JSON에서 에러가 반환되어야 합니다")

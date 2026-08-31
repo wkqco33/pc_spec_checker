@@ -90,7 +90,7 @@ func runCollect(root *wcli.Command, showBuildTime, showAI bool, aiModel, questio
 	}
 
 	consoleFormatter := formatter.NewConsoleFormatter()
-	fmt.Fprint(w, consoleFormatter.Format(systemInfo))
+	_, _ = fmt.Fprint(w, consoleFormatter.Format(systemInfo))
 
 	if showAI {
 		runAIAnalysis(w, systemInfo, aiModel, question)
@@ -123,7 +123,7 @@ func runAIAnalysis(w io.Writer, systemInfo *model.SystemInfo, aiModel, question 
 			rich.Fprintln(w, "[yellow]AI 분석 실패 (기본 출력은 유지됩니다): %v[/yellow]", err)
 			return
 		}
-		fmt.Fprint(w, formatter.FormatAIAnswer(question, answer))
+		_, _ = fmt.Fprint(w, formatter.FormatAIAnswer(question, answer))
 		return
 	}
 
@@ -134,7 +134,7 @@ func runAIAnalysis(w io.Writer, systemInfo *model.SystemInfo, aiModel, question 
 		return
 	}
 
-	fmt.Fprint(w, formatter.FormatAnalysis(result))
+	_, _ = fmt.Fprint(w, formatter.FormatAnalysis(result))
 }
 
 // extractAIQuestion은 원본 인자에서 --ai 이후의 위치 인자(질문)를 추출합니다

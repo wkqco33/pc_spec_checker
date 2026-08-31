@@ -8,12 +8,12 @@ import (
 func setEnv(t *testing.T, key, value string) {
 	t.Helper()
 	old, had := os.LookupEnv(key)
-	os.Setenv(key, value)
+	_ = os.Setenv(key, value)
 	t.Cleanup(func() {
 		if had {
-			os.Setenv(key, old)
+			_ = os.Setenv(key, old)
 		} else {
-			os.Unsetenv(key)
+			_ = os.Unsetenv(key)
 		}
 	})
 }
@@ -46,7 +46,7 @@ func TestNewClientFromEnv_OpenAI(t *testing.T) {
 
 func TestNewClientFromEnv_OpenAI_MissingKey(t *testing.T) {
 	setEnv(t, "PCSC_AI_PROVIDER", "openai")
-	os.Unsetenv("OPENAI_API_KEY")
+	_ = os.Unsetenv("OPENAI_API_KEY")
 
 	if _, err := NewClientFromEnv(); err == nil {
 		t.Error("API 키가 없으면 에러가 반환되어야 합니다")
@@ -55,8 +55,8 @@ func TestNewClientFromEnv_OpenAI_MissingKey(t *testing.T) {
 
 func TestNewClientFromEnv_Azure_MissingConfig(t *testing.T) {
 	setEnv(t, "PCSC_AI_PROVIDER", "azure")
-	os.Unsetenv("AZURE_API_KEY")
-	os.Unsetenv("AZURE_ENDPOINT")
+	_ = os.Unsetenv("AZURE_API_KEY")
+	_ = os.Unsetenv("AZURE_ENDPOINT")
 
 	if _, err := NewClientFromEnv(); err == nil {
 		t.Error("Azure 설정이 없으면 에러가 반환되어야 합니다")
