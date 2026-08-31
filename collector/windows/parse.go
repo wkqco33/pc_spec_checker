@@ -65,3 +65,42 @@ func parseInt(s string) int {
 	}
 	return n
 }
+
+// parseStorageCSV는 wmic CSV 출력(Node,DeviceID,FileSystem,FreeSpace,Size)을 StorageInfo 목록으로 변환합니다
+func parseStorageCSV(output string) []storageItem {
+	var items []storageItem
+	for _, row := range parseCSVRows(output) {
+		if len(row) < 5 {
+			continue
+		}
+		// Node,DeviceID,FileSystem,FreeSpace,Size 순서
+		deviceID := row[1]
+		fileSystem := row[2]
+		freeStr := row[3]
+		sizeStr := row[4]
+
+		if deviceID == "" || sizeStr == "" {
+			continue
+		}
+		totalBytes, err1 := strconv.ParseUint(sizeStr, 10, 64)
+		freeBytes, err2 := strconv.ParseUint(freeStr, 10, 64)
+		if err1 != nil || err2 != nil || totalBytes == 0 {
+			continue
+		}
+		items = append(items, storageItem{
+			Device:     deviceID,
+			Type:       fileSystem,
+			TotalBytes: totalBytes,
+			FreeBytes:  freeBytes,
+		})
+	}
+	return items
+}
+
+// storageItem은 저장장치 수집 중간 결과입니다
+type storageItem struct {
+	Device     string
+	Type       string
+	TotalBytes uint64
+	FreeBytes  uint64
+}

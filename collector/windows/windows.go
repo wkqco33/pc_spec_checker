@@ -199,76 +199,75 @@ func (c *Collector) psOutput(script string) ([]byte, error) {
 func (c *Collector) CollectStorage() ([]model.StorageInfo, error) {
 	// 논리 디스크 정보 가져오기
 	output, err := exec.Command("wmic", "logicaldisk", "get", "DeviceID,FileSystem,Size,FreeSpace", "/format:csv").Output()
-	if err != nil {
-		script := "Get-CimInstance Win32_LogicalDisk | Where-Object {$_.Size} | " +
-			"ForEach-Object { \"{0},{1},{2},{3}\" -f $_.DeviceID, $_.FileSystem, $_.Size, $_.FreeSpace }"
-		output, err = c.psOutput(script)
-		if err != nil {
-			return nil, err
+	items := parseStorageCSV(string(output))
+	if err != nil || len(items) == 0 {
+		// wmic 부재(CI 러너 등) 또는 빈 출력: PowerShell CIM으로 대체
+		psRows, psErr := c.psStorageRows()
+		if psErr != nil {
+			return nil, psErr
 		}
-		// PowerShell 출력은 헤더 없는 CSV — 파서가 헤더를 건너뛰므로 더미 헤더 추가
-		output = append([]byte("DeviceID,FileSystem,Size,FreeSpace\n"), output...)
+		items = psRows
 	}
 
-	var storages []model.StorageInfo
-	lines := strings.Split(string(output), "\n")
+	if len(items) == 0 {
+		return nil, fmt.Errorf("저장장치 정보를 찾을 수 없습니다")
+	}
 
-	// CSV 헤더를 건너뛰고 파싱
-	for _, line := range lines {
-		line = strings.TrimSpace(line)
-		if line == "" {
+	storages := make([]model.StorageInfo, 0, len(items))
+	for _, it := range items {
+		totalGB := float64(it.TotalBytes) / 1024 / 1024 / 1024
+		freeGB := float64(it.FreeBytes) / 1024 / 1024 / 1024
+		usedGB := totalGB - freeGB
+		storages = append(storages, model.StorageInfo{
+			Device:      it.Device,
+			MountPoint:  it.Device, // Windows에서는 드라이브 레터가 마운트 포인트
+			Type:        it.Type,
+			TotalGB:     totalGB,
+			UsedGB:      usedGB,
+			FreeGB:      freeGB,
+			UsedPercent: (usedGB / totalGB) * 100,
+		})
+	}
+	return storages, nil
+}
+
+// psStorageRows는 PowerShell CIM으로 저장장치 정보를 수집합니다
+func (c *Collector) psStorageRows() ([]storageItem, error) {
+	script := "Get-CimInstance Win32_LogicalDisk | Where-Object Size | ForEach-Object { " +
+		"Write-Output ((\"{0}|{1}|{2}|{3}\" -f $_.DeviceID, $_.FileSystem, $_.Size, $_.FreeSpace)) }"
+	output, err := c.psOutput(script)
+	if err != nil {
+		return nil, err
+	}
+
+	var items []storageItem
+	for _, line := range strings.Split(strings.TrimSpace(string(output)), "\n") {
+		fields := strings.Split(strings.TrimSpace(line), "|")
+		if len(fields) < 4 {
 			continue
 		}
-		// 더미 헤더 행 건너뛰기 (PowerShell 폴백 시 추가됨)
-		if strings.HasPrefix(line, "DeviceID,") {
+		deviceID := fields[0]
+		fileSystem := fields[1]
+		sizeStr := fields[2]
+		freeStr := fields[3]
+
+		if deviceID == "" {
 			continue
 		}
-
-		fields := strings.Split(line, ",")
-		if len(fields) < 5 {
-			continue
-		}
-
-		// Node,DeviceID,FileSystem,FreeSpace,Size 순서
-		deviceID := strings.TrimSpace(fields[1])
-		fileSystem := strings.TrimSpace(fields[2])
-		freeSpaceStr := strings.TrimSpace(fields[3])
-		sizeStr := strings.TrimSpace(fields[4])
-
-		// 빈 값 건너뛰기
-		if deviceID == "" || sizeStr == "" {
-			continue
-		}
-
-		// 바이트를 GB로 변환
 		totalBytes, err1 := strconv.ParseUint(sizeStr, 10, 64)
-		freeBytes, err2 := strconv.ParseUint(freeSpaceStr, 10, 64)
-
+		freeBytes, err2 := strconv.ParseUint(freeStr, 10, 64)
 		if err1 != nil || err2 != nil || totalBytes == 0 {
 			continue
 		}
 
-		totalGB := float64(totalBytes) / 1024 / 1024 / 1024
-		freeGB := float64(freeBytes) / 1024 / 1024 / 1024
-		usedGB := totalGB - freeGB
-		usedPercent := (usedGB / totalGB) * 100
-
-		storages = append(storages, model.StorageInfo{
-			Device:      deviceID,
-			MountPoint:  deviceID, // Windows에서는 드라이브 레터가 마운트 포인트
-			Type:        fileSystem,
-			TotalGB:     totalGB,
-			UsedGB:      usedGB,
-			FreeGB:      freeGB,
-			UsedPercent: usedPercent,
+		items = append(items, storageItem{
+			Device:     deviceID,
+			Type:       fileSystem,
+			TotalBytes: totalBytes,
+			FreeBytes:  freeBytes,
 		})
 	}
-
-	if len(storages) == 0 {
-		return nil, fmt.Errorf("저장장치 정보를 찾을 수 없습니다")
-	}
-
-	return storages, nil
+	return items, nil
 }
 
 // CollectGPU는 GPU 정보를 수집합니다
