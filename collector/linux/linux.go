@@ -97,6 +97,7 @@ func (c *Collector) CollectCPU() (*model.CPUInfo, error) {
 	// 예: "0:1" (0번 소켓의 1번 코어)
 	coreMap := make(map[string]bool)
 	threadCount := 0
+	coresFallback := 0
 	var currentPhysicalID, currentCoreID string
 
 	for scanner.Scan() {
@@ -128,6 +129,10 @@ func (c *Collector) CollectCPU() (*model.CPUInfo, error) {
 			currentCoreID = value
 		case "processor":
 			threadCount++
+		case "cpu cores":
+			if n, err := strconv.Atoi(value); err == nil && coresFallback == 0 {
+				coresFallback = n
+			}
 		}
 	}
 	// 마지막 프로세서 정보 처리
@@ -136,41 +141,19 @@ func (c *Collector) CollectCPU() (*model.CPUInfo, error) {
 	}
 
 	cpuInfo.Cores = len(coreMap)
-	// 만약 core id 정보가 없는 환경이라면 fallback으로 cpu cores 필드 탐색 시도
+	// 만약 core id 정보가 없는 환경이라면 "cpu cores" 필드를 사용
 	if cpuInfo.Cores == 0 {
-		cpuInfo.Cores = getCoresFallback()
+		cpuInfo.Cores = coresFallback
 	}
 	// 여전히 0이라면 최소 1개로 설정
 	if cpuInfo.Cores == 0 {
 		cpuInfo.Cores = 1
 	}
-	
+
 	cpuInfo.Threads = threadCount
 	cpuInfo.MaxFreqMHz = getMaxFreqFromSysAll()
 
 	return cpuInfo, nil
-}
-
-// getCoresFallback은 /proc/cpuinfo에서 "cpu cores" 필드를 직접 찾아 반환합니다.
-func getCoresFallback() int {
-	file, err := os.Open("/proc/cpuinfo")
-	if err != nil {
-		return 0
-	}
-	defer file.Close()
-
-	scanner := bufio.NewScanner(file)
-	for scanner.Scan() {
-		line := scanner.Text()
-		if strings.Contains(line, "cpu cores") {
-			parts := strings.Split(line, ":")
-			if len(parts) >= 2 {
-				val, _ := strconv.Atoi(strings.TrimSpace(parts[1]))
-				return val // 이는 소켓당 코어 수이므로 소켓 수를 곱해야 정확하지만 일반적인 환경에선 유효함
-			}
-		}
-	}
-	return 0
 }
 
 // getMaxFreqFromSysAll은 모든 코어를 스캔하여 시스템 전체의 최대 주파수를 찾습니다
@@ -382,7 +365,7 @@ func collectGPUFromLspci() ([]model.GPUInfo, error) {
 			continue
 		}
 		pciAddr := parts[0]
-		
+
 		// 상세 이름 추출
 		nameParts := strings.Split(parts[1], ": ")
 		name := nameParts[len(nameParts)-1]
@@ -426,9 +409,8 @@ func getGPUMemoryFromSys(pciAddr string) float64 {
 		end, _ := strconv.ParseUint(fields[1], 0, 64)
 		flags, _ := strconv.ParseUint(fields[2], 0, 64)
 
-		// IORESOURCE_MEM (0x200) 및 IORESOURCE_PREFETCH (0x2000) 플래그 확인
-		// VRAM은 보통 prefetchable 메모리 영역 중 가장 큰 부분입니다.
-		if (flags & 0x200) != 0 && (flags & 0x2000) != 0 {
+		// IORESOURCE_MEM(0x200) + IORESOURCE_PREFETCH(0x2000)인 가장 큰 영역을 VRAM으로 추정
+		if (flags&0x200) != 0 && (flags&0x2000) != 0 {
 			size := end - start + 1
 			if size > maxRegion {
 				maxRegion = size
@@ -438,4 +420,3 @@ func getGPUMemoryFromSys(pciAddr string) float64 {
 
 	return float64(maxRegion) / 1024 / 1024 / 1024
 }
-

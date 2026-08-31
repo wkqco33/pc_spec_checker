@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"strconv"
 	"strings"
+	"sync"
 
 	"wkqcosoft.com/m/model"
 )
@@ -19,27 +20,46 @@ func New() *Collector {
 	return &Collector{}
 }
 
-// CollectAll은 모든 시스템 정보를 수집합니다
+// CollectAll은 모든 시스템 정보를 병렬로 수집합니다
 func (c *Collector) CollectAll() (*model.SystemInfo, error) {
-	cpu, err := c.CollectCPU()
-	if err != nil {
-		return nil, fmt.Errorf("CPU 정보 수집 실패: %w", err)
-	}
+	var (
+		cpu     *model.CPUInfo
+		memory  *model.MemoryInfo
+		storage []model.StorageInfo
+		gpu     []model.GPUInfo
+		errs    = make([]error, 4)
+		wg      sync.WaitGroup
+	)
 
-	memory, err := c.CollectMemory()
-	if err != nil {
-		return nil, fmt.Errorf("메모리 정보 수집 실패: %w", err)
-	}
+	wg.Add(4)
 
-	storage, err := c.CollectStorage()
-	if err != nil {
-		return nil, fmt.Errorf("저장장치 정보 수집 실패: %w", err)
-	}
+	go func() {
+		defer wg.Done()
+		cpu, errs[0] = c.CollectCPU()
+	}()
+	go func() {
+		defer wg.Done()
+		memory, errs[1] = c.CollectMemory()
+	}()
+	go func() {
+		defer wg.Done()
+		storage, errs[2] = c.CollectStorage()
+	}()
+	go func() {
+		defer wg.Done()
+		var err error
+		gpu, err = c.CollectGPU()
+		if err != nil {
+			gpu = []model.GPUInfo{}
+		}
+	}()
 
-	gpu, err := c.CollectGPU()
-	if err != nil {
-		// GPU 정보는 선택적이므로 에러가 나도 계속 진행
-		gpu = []model.GPUInfo{}
+	wg.Wait()
+
+	for i := 0; i < 3; i++ {
+		if errs[i] != nil {
+			return nil, errs[i]
+		}
 	}
 
 	return &model.SystemInfo{
@@ -335,17 +355,4 @@ func (c *Collector) collectNvidiaGPU() ([]model.GPUInfo, error) {
 	}
 
 	return gpus, nil
-}
-
-// detectVendorFromName은 GPU 이름에서 제조사를 추측합니다
-func detectVendorFromName(name string) string {
-	lowerName := strings.ToLower(name)
-	if strings.Contains(lowerName, "nvidia") || strings.Contains(lowerName, "geforce") || strings.Contains(lowerName, "quadro") {
-		return "NVIDIA"
-	} else if strings.Contains(lowerName, "amd") || strings.Contains(lowerName, "radeon") {
-		return "AMD"
-	} else if strings.Contains(lowerName, "intel") {
-		return "Intel"
-	}
-	return "Unknown"
 }
