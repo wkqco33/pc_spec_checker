@@ -10,6 +10,7 @@
 - **메모리(RAM) 정보**: 전체 용량, 사용 중인 용량, 사용 가능한 용량, 사용률
 - **저장장치 정보**: 장치 경로, 마운트 지점, 파일시스템 타입, 용량 및 사용률
 - **GPU 정보**: GPU 이름, 제조사, GPU 메모리, 드라이버 버전 (가능한 경우)
+- **AI 사양 분석** (`--ai`): LLM이 게임/개발/영상시청/웹서핑/사무 용도별 성능 등급과 업그레이드 제안을 요약 ([LLM_client_go](https://github.com/wkqco33/LLM_client_go) 사용, 기본: 로컬 Ollama)
 
 ## 지원 플랫폼
 
@@ -44,7 +45,13 @@ pcsc/
 │       └── stub.go         # 다른 OS용 스텁
 ├── formatter/              # 출력 포맷팅 레이어
 │   ├── formatter.go        # 콘솔 출력 포매터
+│   ├── analysis.go         # AI 분석 결과 포매터
 │   └── formatter_test.go   # 포매터 유닛 테스트
+├── analyzer/               # AI 사양 분석 레이어
+│   ├── analyzer.go         # LLM 분석기 (llm.Client 주입)
+│   ├── prompt.go           # 프롬프트 빌더 + JSON 스키마
+│   ├── provider.go         # 환경변수 기반 LLM 프로바이더 팩토리
+│   └── result.go           # 분석 결과 모델
 ├── main.go                 # 애플리케이션 진입점
 ├── Taskfile.yml            # 빌드 자동화
 ├── go.mod                  # Go 모듈 정의
@@ -139,6 +146,105 @@ pcsc.exe
 ```
 
 프로그램은 자동으로 현재 운영체제를 감지하고 적절한 방법으로 시스템 정보를 수집합니다.
+
+### AI 사양 분석
+
+`--ai` 플래그를 사용하면 설정된 LLM이 사양을 분석해 게임/개발/영상시청/웹서핑/사무 용도별 성능 등급을 요약해 줍니다.
+
+```bash
+./pcsc --ai
+```
+
+#### 질문에 맞춘 분석
+
+`--ai` 뒤에 질문을 넣으면 사양을 기반으로 질문에 직접 답변합니다:
+
+```bash
+./pcsc --ai "이 PC에서 rust 개발을 할건데 적합할까?"
+./pcsc --ai "배틀그라운드 1080p 고사양 옵션으로 돌릴 수 있어?"
+./pcsc --ai --ai-model llama3.1 "영상 편집용으로 쓸만한가요?"
+```
+
+출력 예시:
+
+```text
+┌─ AI 사양 분석
+│  6코어 12스레드 CPU와 RTX 3060을 갖춘 균형 잡힌 구성입니다.
+│
+│  게임       [좋음]     70점 — 인디 및 1080p 게임은 원활합니다.
+│  개발       [보통]     50점 — 대형 프로젝트 빌드는 다소 느립니다.
+│  영상시청   [좋음]     75점 — 4K 재생이 가능합니다.
+│  웹서핑     [매우 좋음] 90점 — 충분합니다.
+│  사무       [매우 좋음] 95점 — 사무용으로 문제 없습니다.
+│
+│  업그레이드 제안: 메모리 추가를 권장합니다.
+└─────────────────────────────────────────────────────────────────
+```
+
+LLM 프로바이더는 환경변수로 설정합니다 (기본: 로컬 Ollama):
+
+```bash
+# 기본: 로컬 Ollama (http://localhost:11434, API 키 불필요)
+ollama pull qwen3.4b
+./pcsc --ai
+
+# 모델 변경
+./pcsc --ai --ai-model llama3.1
+# 또는
+export PCSC_AI_MODEL=llama3.1
+
+# OpenAI API 사용
+export PCSC_AI_PROVIDER=openai
+export OPENAI_API_KEY=sk-...
+./pcsc --ai
+
+# Azure OpenAI 사용
+export PCSC_AI_PROVIDER=azure
+export AZURE_API_KEY=...
+export AZURE_ENDPOINT=https://<resource-name>.openai.azure.com
+./pcsc --ai
+```
+
+### 설정 파일 관리
+
+AI 분석 설정은 `pcsc config` 명령으로 관리할 수 있습니다:
+
+```bash
+# 기본 설정 파일 생성 (~/.config/pcsc/config.json)
+pcsc config init
+
+# 현재 설정 보기
+pcsc config show
+
+# 설정 변경
+pcsc config set ai.provider openai
+pcsc config set ai.model gpt-4o-mini
+pcsc config set ai.ollama_base_url http://192.168.1.5:11434/v1
+```
+
+설정 파일 예시:
+
+```json
+{
+  "ai": {
+    "provider": "ollama",
+    "model": "qwen3.4b",
+    "ollama_base_url": ""
+  }
+}
+```
+
+우선순위: **플래그 > 환경변수 > 설정 파일 > 기본값**
+
+| 환경변수 | 설명 | 기본값 |
+|----------|------|--------|
+| `PCSC_AI_PROVIDER` | LLM 프로바이더 (`ollama`/`openai`/`azure`) | `ollama` |
+| `PCSC_AI_MODEL` | 모델명 | `qwen3.4b` (Ollama) / `gpt-4o-mini` (OpenAI) |
+| `OLLAMA_BASE_URL` | Ollama 엔드포인트 | `http://localhost:11434/v1` |
+| `OPENAI_API_KEY` | OpenAI API 키 (`openai` 시 필수) | — |
+| `AZURE_API_KEY` / `AZURE_ENDPOINT` | Azure 설정 (`azure` 시 필수) | — |
+
+AI 분석 중 LLM 연결 실패 시 사양 출력은 정상적으로 유지되고 분석 결과만 생략됩니다.
 
 ## Task 주요 태스크
 

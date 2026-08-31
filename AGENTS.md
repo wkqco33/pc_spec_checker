@@ -4,13 +4,18 @@
 
 ## 프로젝트 개요
 
-Linux/macOS/Windows 하드웨어 사양 수집 CLI 도구. Go 표준 라이브러리만 사용하며 외부 의존성이 없습니다.
+Linux/macOS/Windows 하드웨어 사양 수집 CLI 도구. Go 표준 라이브러리 외 승인된 의존성은 아래와 같습니다.
+
+**승인된 외부 의존성** (추가 시 사전 논의 필요):
+- `github.com/wkqco33/wcli` — CLI 프레임워크
+- `github.com/wkqco33/LLM_client_go` — LLM 클라이언트 (`analyzer/` 패키지, `--ai` 기능)
 
 ```
 main.go              # 진입점 (flag 파싱, 흐름 조정)
 model/               # 데이터 모델 (SystemInfo 등)
 collector/           # OS별 정보 수집 (factory + linux/darwin/windows)
 formatter/           # 수집 데이터를 콘솔 텍스트로 포맷팅
+analyzer/            # AI 사양 분석 (LLM 클라이언트, --ai 플래그)
 ```
 
 ## 개발 워크플로우 (TDD)
