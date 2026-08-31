@@ -50,7 +50,7 @@ jobs:
           LDFLAGS="-s -w -X main.Version=${VERSION} -X main.BuildTime=${BUILD_TIME}"
           
           GOOS=${{ matrix.goos }} GOARCH=${{ matrix.goarch }} \
-            go build -ldflags="${LDFLAGS}" -o "${BINARY_NAME}${{ matrix.ext }}" main.go
+            go build -ldflags="${LDFLAGS}" -o "${BINARY_NAME}${{ matrix.ext }}" .
 
       - name: Package
         shell: bash
