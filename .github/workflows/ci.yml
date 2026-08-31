@@ -15,6 +15,9 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          # Windows에서 CRLF 변환으로 gofmt이 실패하지 않도록 LF 유지
+          autocrlf: false
 
       - uses: actions/setup-go@v5
         with:
@@ -46,7 +49,7 @@ jobs:
           go-version-file: go.mod
 
       - name: golangci-lint
-        uses: golangci/golangci-lint-action@v6
+        uses: golangci/golangci-lint-action@v9
         with:
-          version: latest
+          version: v2.13.2
           args: --timeout=5m
