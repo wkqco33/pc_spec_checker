@@ -1,10 +1,12 @@
 package main
 
 import (
-	"flag"
 	"fmt"
 	"os"
 	"runtime"
+
+	"github.com/wkqco33/wcli"
+	"github.com/wkqco33/wcli/rich"
 
 	"wkqcosoft.com/m/collector"
 	"wkqcosoft.com/m/formatter"
@@ -18,56 +20,63 @@ var (
 )
 
 func main() {
-	versionFlag := flag.Bool("v", false, "버전 정보를 표시합니다")
-	longVersionFlag := flag.Bool("version", false, "버전 정보를 표시합니다")
-	helpFlag := flag.Bool("h", false, "도움말을 표시합니다")
-	longHelpFlag := flag.Bool("help", false, "도움말을 표시합니다")
+	root := newRootCommand()
+	if err := root.Execute(os.Args[1:]); err != nil {
+		os.Exit(1)
+	}
+}
 
-	flag.Usage = func() {
-		fmt.Fprintf(os.Stderr, "사용법: pcsc [옵션]\n\n")
-		fmt.Fprintf(os.Stderr, "시스템 하드웨어 사양 정보를 수집하고 표시하는 CLI 도구입니다.\n\n")
-		fmt.Fprintf(os.Stderr, "옵션:\n")
-		flag.PrintDefaults()
+// newRootCommand는 pcsc 루트 커맨드를 구성합니다
+func newRootCommand() *wcli.Command {
+	var (
+		showBuildTime bool
+		root          *wcli.Command
+	)
+
+	root = &wcli.Command{
+		Use:     "pcsc",
+		Short:   "시스템 하드웨어 사양 정보를 수집하고 표시하는 CLI 도구입니다",
+		Long:    "pcsc는 Linux/macOS/Windows의 하드웨어 사양 정보를 수집해 콘솔에 표시합니다.",
+		Version: Version,
+		Run: func(ctx *wcli.Context) error {
+			return runCollect(root, showBuildTime)
+		},
 	}
 
-	flag.Parse()
+	root.Flags().BoolVar(&showBuildTime, "build-time", "", false, "빌드 시간을 함께 표시합니다")
 
-	if *versionFlag || *longVersionFlag {
-		fmt.Printf("pcsc 버전: %s\n", Version)
-		fmt.Printf("빌드 시간: %s\n", BuildTime)
-		fmt.Printf("Go 버전: %s\n", runtime.Version())
-		return
+	return root
+}
+
+// runCollect는 시스템 정보를 수집하고 출력합니다
+func runCollect(root *wcli.Command, showBuildTime bool) error {
+	// 테스트 등에서 OutWriter 미설정 시 기본값 사용
+	w := root.OutWriter
+	if w == nil {
+		w = os.Stdout
 	}
 
-	if *helpFlag || *longHelpFlag {
-		flag.Usage()
-		return
+	if showBuildTime {
+		rich.Fprintln(w, "[dim]빌드 시간: %s[/dim]", BuildTime)
 	}
 
-	// 현재 OS에 맞는 시스템 정보 수집기 생성
+	osName := getOSName()
+	rich.Fprintln(w, "[cyan]시스템 정보를 수집 중... (%s)[/cyan]", osName)
+
 	systemCollector, err := collector.NewCollector()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "오류: %v\n", err)
-		os.Exit(1)
+		return fmt.Errorf("수집기를 생성할 수 없습니다: %w", err)
 	}
 
-	// OS 정보 표시
-	osName := getOSName()
-	fmt.Printf("시스템 정보를 수집 중... (%s)\n", osName)
-
-	// 모든 시스템 정보 수집
 	systemInfo, err := systemCollector.CollectAll()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "오류: 시스템 정보를 수집할 수 없습니다: %v\n", err)
-		os.Exit(1)
+		return fmt.Errorf("시스템 정보를 수집할 수 없습니다: %w", err)
 	}
 
-	// 콘솔 포매터 생성
 	consoleFormatter := formatter.NewConsoleFormatter()
+	fmt.Fprint(w, consoleFormatter.Format(systemInfo))
 
-	// 시스템 정보를 포맷팅하여 출력
-	output := consoleFormatter.Format(systemInfo)
-	fmt.Print(output)
+	return nil
 }
 
 // getOSName은 현재 운영체제의 이름을 반환합니다
