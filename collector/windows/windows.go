@@ -201,7 +201,7 @@ func (c *Collector) CollectStorage() ([]model.StorageInfo, error) {
 	output, err := exec.Command("wmic", "logicaldisk", "get", "DeviceID,FileSystem,Size,FreeSpace", "/format:csv").Output()
 	if err != nil {
 		script := "Get-CimInstance Win32_LogicalDisk | Where-Object {$_.Size} | " +
-			"ForEach-Object { \"$($_.DeviceID),$($_.FileSystem),$($_.Size),$($_.FreeSpace)\" }"
+			"ForEach-Object { \"{0},{1},{2},{3}\" -f $_.DeviceID, $_.FileSystem, $_.Size, $_.FreeSpace }"
 		output, err = c.psOutput(script)
 		if err != nil {
 			return nil, err
@@ -214,9 +214,13 @@ func (c *Collector) CollectStorage() ([]model.StorageInfo, error) {
 	lines := strings.Split(string(output), "\n")
 
 	// CSV 헤더를 건너뛰고 파싱
-	for i := 1; i < len(lines); i++ {
-		line := strings.TrimSpace(lines[i])
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
 		if line == "" {
+			continue
+		}
+		// 더미 헤더 행 건너뛰기 (PowerShell 폴백 시 추가됨)
+		if strings.HasPrefix(line, "DeviceID,") {
 			continue
 		}
 
@@ -279,7 +283,7 @@ func (c *Collector) CollectGPU() ([]model.GPUInfo, error) {
 	output, err := exec.Command("wmic", "path", "win32_VideoController", "get", "Name,AdapterRAM,DriverVersion", "/format:csv").Output()
 	if err != nil {
 		script := "Get-CimInstance Win32_VideoController | " +
-			"ForEach-Object { \"$($_.AdapterRAM),$($_.DriverVersion),$($_.Name)\" }"
+			"ForEach-Object { \"{0},{1},{2}\" -f $_.AdapterRAM, $_.DriverVersion, $_.Name }"
 		output, err = c.psOutput(script)
 		if err != nil {
 			return nil, err
