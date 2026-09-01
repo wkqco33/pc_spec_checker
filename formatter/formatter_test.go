@@ -45,24 +45,56 @@ func TestConsoleFormatter_Format(t *testing.T) {
 	}
 
 	formatter := NewConsoleFormatter()
-	result := formatter.Format(testInfo)
+	result := formatter.FormatVerbose(testInfo)
 
 	// 결과 검증: 주요 정보가 포함되어 있는지 확인
 	requiredStrings := []string{
 		"PC 사양 정보",
-		"CPU 정보",
 		"Intel Core i7-9700K",
-		"메모리 (RAM) 정보",
 		"16.00 GB",
-		"저장장치 정보",
-		"/dev/sda1",
-		"GPU 정보",
 		"NVIDIA GeForce RTX 3080",
 	}
 
 	for _, required := range requiredStrings {
 		if !strings.Contains(result, required) {
 			t.Errorf("포맷된 출력에 '%s'가 포함되어 있지 않습니다", required)
+		}
+	}
+}
+
+func TestConsoleFormatter_FormatSummaryOmitsVerboseDetails(t *testing.T) {
+	testInfo := &model.SystemInfo{
+		CPU:     model.CPUInfo{Model: "Test CPU", Cores: 4, Threads: 8, MaxFreqMHz: 3000},
+		Memory:  model.MemoryInfo{TotalGB: 16, UsedGB: 8, AvailableGB: 8, UsedPercent: 50},
+		Storage: []model.StorageInfo{{Device: "/dev/sda1", MountPoint: "/", Type: "ext4", TotalGB: 500, UsedGB: 250, FreeGB: 250, UsedPercent: 50}},
+		GPU:     []model.GPUInfo{{Name: "Test GPU", Vendor: "Test", MemoryGB: 8, Driver: "1.0"}},
+	}
+
+	result := NewConsoleFormatter().Format(testInfo)
+	for _, expected := range []string{"Test CPU", "4코어/8스레드", "16.00 GB", "Test GPU"} {
+		if !strings.Contains(result, expected) {
+			t.Errorf("요약 출력에 '%s'가 없습니다: %q", expected, result)
+		}
+	}
+	for _, verboseOnly := range []string{"/dev/sda1", "ext4", "드라이버"} {
+		if strings.Contains(result, verboseOnly) {
+			t.Errorf("요약 출력에 상세 항목 '%s'가 포함되어 있습니다: %q", verboseOnly, result)
+		}
+	}
+}
+
+func TestConsoleFormatter_FormatVerboseIncludesDetails(t *testing.T) {
+	info := &model.SystemInfo{
+		CPU:     model.CPUInfo{Model: "Test CPU", Cores: 4, Threads: 8, MaxFreqMHz: 3000},
+		Memory:  model.MemoryInfo{TotalGB: 16, UsedGB: 8, AvailableGB: 8, UsedPercent: 50},
+		Storage: []model.StorageInfo{{Device: "/dev/sda1", MountPoint: "/", Type: "ext4", TotalGB: 500, UsedGB: 250, FreeGB: 250, UsedPercent: 50}},
+		GPU:     []model.GPUInfo{{Name: "Test GPU", Vendor: "Test", MemoryGB: 8, Driver: "1.0"}},
+	}
+
+	result := NewConsoleFormatter().FormatVerbose(info)
+	for _, expected := range []string{"/dev/sda1", "ext4", "사용 가능", "드라이버: 1.0"} {
+		if !strings.Contains(result, expected) {
+			t.Errorf("상세 출력에 '%s'가 없습니다: %q", expected, result)
 		}
 	}
 }
@@ -193,7 +225,7 @@ func TestConsoleFormatter_FormatEmptyGPU(t *testing.T) {
 	}
 
 	formatter := NewConsoleFormatter()
-	result := formatter.Format(testInfo)
+	result := formatter.FormatVerbose(testInfo)
 
 	if !strings.Contains(result, "GPU 정보를 찾을 수 없습니다") {
 		t.Error("GPU가 없을 때 적절한 메시지가 표시되지 않습니다")

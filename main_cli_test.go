@@ -69,6 +69,9 @@ func TestExecuteHelp(t *testing.T) {
 	if !strings.Contains(outStr, "build-time") {
 		t.Errorf("도움말에 build-time 플래그가 없습니다: %q", outStr)
 	}
+	if !strings.Contains(outStr, "verbose") {
+		t.Errorf("도움말에 verbose 플래그가 없습니다: %q", outStr)
+	}
 }
 
 func TestExecuteUnknownFlag(t *testing.T) {

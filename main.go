@@ -37,6 +37,7 @@ func newRootCommand() *wcli.Command {
 	var (
 		showBuildTime bool
 		showAI        bool
+		verbose       bool
 		aiModel       string
 		root          *wcli.Command
 	)
@@ -51,12 +52,13 @@ func newRootCommand() *wcli.Command {
 		Version: Version,
 		Run: func(ctx *wcli.Context) error {
 			question := extractAIQuestion(os.Args[1:])
-			return runCollect(root, showBuildTime, showAI, aiModel, question)
+			return runCollect(root, showBuildTime, showAI, verbose, aiModel, question)
 		},
 	}
 
 	root.Flags().BoolVar(&showBuildTime, "build-time", "", false, "빌드 시간을 함께 표시합니다")
 	root.Flags().BoolVar(&showAI, "ai", "", false, "AI 사양 분석을 함께 표시합니다 (기본: Ollama 로컬)")
+	root.Flags().BoolVar(&verbose, "verbose", "v", false, "시스템 정보를 상세하게 표시합니다")
 	root.Flags().StringVar(&aiModel, "ai-model", "", "", "AI 분석에 사용할 모델명 (기본: 설정 파일 또는 PCSC_AI_MODEL)")
 
 	root.AddCommand(newConfigCommand(root))
@@ -65,7 +67,7 @@ func newRootCommand() *wcli.Command {
 }
 
 // runCollect는 시스템 정보를 수집하고 출력합니다
-func runCollect(root *wcli.Command, showBuildTime, showAI bool, aiModel, question string) error {
+func runCollect(root *wcli.Command, showBuildTime, showAI, verbose bool, aiModel, question string) error {
 	// 테스트 등에서 OutWriter 미설정 시 기본값 사용
 	w := root.OutWriter
 	if w == nil {
@@ -90,7 +92,11 @@ func runCollect(root *wcli.Command, showBuildTime, showAI bool, aiModel, questio
 	}
 
 	consoleFormatter := formatter.NewConsoleFormatter()
-	_, _ = fmt.Fprint(w, consoleFormatter.Format(systemInfo))
+	if verbose {
+		_, _ = fmt.Fprint(w, consoleFormatter.FormatVerbose(systemInfo))
+	} else {
+		_, _ = fmt.Fprint(w, consoleFormatter.Format(systemInfo))
+	}
 
 	if showAI {
 		runAIAnalysis(w, systemInfo, aiModel, question)

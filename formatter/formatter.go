@@ -20,8 +20,41 @@ func NewConsoleFormatter() *ConsoleFormatter {
 	return &ConsoleFormatter{}
 }
 
-// Format은 시스템 정보를 보기 좋은 형태로 포맷팅합니다
+// Format은 시스템 정보의 핵심 항목을 요약해 포맷팅합니다
 func (f *ConsoleFormatter) Format(info *model.SystemInfo) string {
+	var builder strings.Builder
+
+	builder.WriteString("\nPC 사양 요약\n")
+	builder.WriteString("────────────────────────────────────────\n")
+	fmt.Fprintf(&builder, "CPU: %s (%d코어/%d스레드)\n", info.CPU.Model, info.CPU.Cores, info.CPU.Threads)
+	fmt.Fprintf(&builder, "메모리: %.2f GB (%.1f%% 사용 중)\n", info.Memory.TotalGB, info.Memory.UsedPercent)
+
+	if len(info.Storage) == 0 {
+		builder.WriteString("저장장치: 정보를 찾을 수 없습니다.\n")
+	} else {
+		for _, storage := range info.Storage {
+			fmt.Fprintf(&builder, "저장장치: %.2f GB (%.1f%% 사용 중)\n", storage.TotalGB, storage.UsedPercent)
+		}
+	}
+
+	if len(info.GPU) == 0 {
+		builder.WriteString("GPU: 정보를 찾을 수 없습니다.\n")
+	} else {
+		for _, gpu := range info.GPU {
+			if gpu.MemoryGB > 0 {
+				fmt.Fprintf(&builder, "GPU: %s (%.2f GB)\n", gpu.Name, gpu.MemoryGB)
+			} else {
+				fmt.Fprintf(&builder, "GPU: %s\n", gpu.Name)
+			}
+		}
+	}
+	builder.WriteString("\n")
+
+	return builder.String()
+}
+
+// FormatVerbose는 시스템 정보의 전체 항목을 상세하게 포맷팅합니다
+func (f *ConsoleFormatter) FormatVerbose(info *model.SystemInfo) string {
 	var builder strings.Builder
 
 	// 제목

@@ -10,6 +10,7 @@
 - **메모리(RAM) 정보**: 전체 용량, 사용 중인 용량, 사용 가능한 용량, 사용률
 - **저장장치 정보**: 장치 경로, 마운트 지점, 파일시스템 타입, 용량 및 사용률
 - **GPU 정보**: GPU 이름, 제조사, GPU 메모리, 드라이버 버전 (가능한 경우)
+- **출력 모드**: 기본 요약 출력, `--verbose` 또는 `-v`로 전체 상세 출력
 - **AI 사양 분석** (`--ai`): LLM이 게임/개발/영상시청/웹서핑/사무 용도별 성능 등급과 업그레이드 제안을 요약 ([LLM_client_go](https://github.com/wkqco33/LLM_client_go) 사용, 기본: 로컬 Ollama)
 
 ## 지원 플랫폼
@@ -140,6 +141,11 @@ GOOS=windows GOARCH=amd64 go build -o pcsc.exe
 ```bash
 # Linux/macOS
 ./pcsc
+
+# 모든 세부 정보 표시
+./pcsc --verbose
+# 짧은 옵션
+./pcsc -v
 
 # Windows
 pcsc.exe
